@@ -146,27 +146,35 @@
 
   /* How much useful background (autofluorescence) a channel picks up at a given
    * excitation wavelength - the anatomical context you register sections
-   * against. A heuristic, not measured data.
+   * against. A heuristic, not measured data: four emission bands, each with a
+   * level it sits at while there is still short-enough excitation to drive it
+   * (`base`), a wavelength where it starts to go (`knee`) and how quickly it
+   * does (`span`).
    *
-   * Two effects combine. Tissue and agar autofluorescence is intrinsically
-   * brightest towards the blue end, which sets `base`. And it needs short
-   * excitation: the bluer the emission, the sooner it dies off as the laser is
-   * tuned redder, which sets `knee`. Blue's knee is low, which is why at 920 nm
-   * the blue channel is a poor background choice and red is the better one,
-   * while below ~800 nm blue is the obvious pick.
+   * The shape is set by what is actually seen on the microscope rather than by
+   * anything published: red is as good as green and blue below 920 nm, blue is
+   * borderline by 920, and both red and green are weak by 1000. An earlier
+   * version had red at half of blue at every wavelength, which had it merely
+   * "usable" at 800 nm where in practice all three are fine.
    */
   function backgroundYield(centre, wl) {
-    var base, knee;
-    if (centre < 500) { base = 1.00; knee = 820; }        // blue
-    else if (centre < 560) { base = 0.85; knee = 940; }   // green
-    else if (centre < 650) { base = 0.50; knee = 1000; }  // red
-    else { base = 0.08; knee = 1000; }                    // far red
-    var t = Math.max(0, Math.min(1, (wl - knee) / 120));
+    var base, knee, span;
+    if (centre < 500) { base = 1.00; knee = 820; span = 140; }        // blue
+    else if (centre < 560) { base = 0.90; knee = 920; span = 100; }   // green
+    else if (centre < 650) { base = 0.85; knee = 920; span = 100; }   // red
+    else { base = 0.10; knee = 1000; span = 120; }                    // far red
+    var t = Math.max(0, Math.min(1, (wl - knee) / span));
     return base * (1 - 0.85 * t);
   }
 
+  /* The underlying number is continuous and the change with wavelength is
+   * gradual, so a word that flips at a hard threshold overstates what happened
+   * between 940 and 960 nm. Hence "borderline" between usable and weak: the band
+   * where the honest answer is "it depends on your sample", and where the reader
+   * should be looking at the bar rather than the word. */
   function bgLabel(v) {
-    return v >= 0.6 ? 'strong' : v >= 0.3 ? 'usable' : v >= 0.15 ? 'weak' : 'very little';
+    return v >= 0.6 ? 'strong' : v >= 0.45 ? 'usable' : v >= 0.3 ? 'borderline'
+      : v >= 0.15 ? 'weak' : 'very little';
   }
 
   /* Decide what each channel is for.

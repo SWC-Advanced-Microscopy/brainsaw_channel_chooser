@@ -224,7 +224,15 @@ Two things on the page are **not** measured data and are labelled as such:
   rather than worst-case output. Edit `LASERS` in `build/fetch_data.py` to match
   your own rig.
 - **Background estimates** in "Channels to acquire" — a heuristic for how much
-  tissue and agar autofluorescence a channel sees, not a measurement.
+  tissue and agar autofluorescence a channel sees, not a measurement. Four
+  emission bands, each with a level it holds while there is short-enough
+  excitation to drive it, a wavelength where it starts to go and how fast
+  (`backgroundYield` in `js/optics.js`). The shape is fitted to what is seen on
+  the microscope: red is as good as green and blue below 920 nm, blue is
+  borderline by 920, red and green are weak by 1000. The words above the bars are
+  bands drawn across a continuous number, so a channel does not change character
+  at the wavelength where its word does — hence "borderline" for the range where
+  the honest answer is that it depends on the sample.
 
 Channels are modelled from their bandpass filters alone. The dichroics that route
 light to them (FF635-Di01, DMSP490R) only trim edges the bandpass filters already

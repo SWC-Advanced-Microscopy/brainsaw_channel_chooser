@@ -492,7 +492,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .role-signal .acq-chip { background: var(--good-soft); color: var(--good); }
 .role-background .acq-chip { background: var(--accent-soft); color: var(--accent-ink); }
 .acq-reason { display: block; font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-.acq-bg { flex: none; width: 92px; text-align: right; }
+.acq-bg { flex: none; width: 104px; text-align: right; }
 .acq-bg-track {
   display: block; height: 5px; border-radius: 3px;
   background: var(--surface-sunk); overflow: hidden;
@@ -500,6 +500,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .acq-bg-fill { display: block; height: 100%; background: var(--text-muted); border-radius: 3px; }
 .role-background .acq-bg-fill { background: var(--accent); }
 .acq-bg-label { display: block; font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+/* the caption sits on its own line so "very little" does not shred the column */
+.acq-bg-label em {
+  display: block; font-style: normal; font-size: 9.5px;
+  text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7;
+}
 
 /* -------------------------------------------------------------- table */
 .table-wrap { overflow-x: auto; padding: 0 16px 16px; }

@@ -1233,7 +1233,10 @@
           wl + ' nm">' +
           '<span class="acq-bg-track"><span class="acq-bg-fill" style="width:' +
             (clamp(entry.bg, 0, 1) * 100).toFixed(0) + '%"></span></span>' +
-          '<span class="acq-bg-label">' + SV.escapeHtml(SV.optics.bgLabel(entry.bg)) + '</span>' +
+          // named, because on a row headed by a fluorophore's channel a bare
+          // "strong" reads as a verdict on the dye rather than on the tissue
+          '<span class="acq-bg-label"><em>background</em>' +
+            SV.escapeHtml(SV.optics.bgLabel(entry.bg)) + '</span>' +
         '</span>';
       list.appendChild(li);
     });
@@ -1246,8 +1249,11 @@
     }
     $('acquire-note').textContent =
       'Background estimates are a heuristic for how much tissue and agar ' +
-      'autofluorescence a channel sees at ' + wl + ' nm, not measured data. ' +
-      'They fall off as the laser is tuned redder, soonest for the bluest channels.';
+      'autofluorescence a channel sees at ' + wl + ' nm, not measured data. They ' +
+      'fall off as the laser is tuned redder, soonest for the bluest channels, and ' +
+      'they fall off gradually — the bars are the estimate, and the words are just ' +
+      'bands drawn across them, so a channel does not change character at the ' +
+      'wavelength where its word does.';
   }
 
   /* -- matrix ------------------------------------------------------------ */
