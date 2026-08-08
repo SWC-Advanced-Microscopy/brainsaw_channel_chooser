@@ -360,13 +360,30 @@ one beam, nor to a fixed line, nor to a laser that cannot tune below 940 nm.
 **The cap is soft against a peak and hard against a slope.** eYFP doubles between
 940 and 960 nm and then falls away again, so a flat boundary was cutting across a
 maximum that merely happens to sit the wrong side of it. A lone beam may therefore
-cross, but only to reach a genuine top — nothing above it in the laser's range
-scores better — within 40 nm of the cap, and only if it is worth at least 25% more
-than the best point below. Having crossed, it stops at the near edge of that top
-rather than its middle. tdTomato and mCherry fail the test immediately: they are
-still climbing at 1040 nm, so there is no top to cross to and 940 holds. In
-practice the only things this moves are eYFP and citrine, from 940 to 960 nm, and
-the advice says why the number is redder than usual.
+cross, to a point within 40 nm of the cap, if three things hold:
+
+- **Somebody gains properly** — one fluorophore is at least 25% brighter there
+  than at the best wavelength below the cap.
+- **Nobody pays for it** — no other fluorophore is more than 5% worse off. One
+  fluorophore buying another's peak is a trade, and the cap should not be let out
+  for a trade. This is asked of each fluorophore separately, not of the combined
+  score: pair eYFP with dTomato and the harmonic mean, dominated by the dimmer
+  dTomato, dilutes eYFP's doubling to +16% overall even though dTomato itself is
+  flat across the step and gives up nothing.
+- **It is genuinely a top** — read off the gaining fluorophore's own cross-section
+  curve, which must extend at least 20 nm past the peak and must not beat it by
+  more than 10% anywhere further out.
+
+That last test has to be read on the raw curve rather than on the score, because
+the context penalty is already pulling the score down above 950 nm: read there,
+every curve looks like it is peaking, and DsRed2 — whose data stops at 990 nm
+while it is still climbing hard — came out as a maximum at 970. Having crossed,
+the beam stops at the near edge of the top rather than its middle.
+
+tdTomato and mCherry fail immediately: still climbing at 1040 nm, no top to cross
+to, 940 holds. In practice this moves eYFP and citrine (alone or paired with a
+tomato) from 940 to 960 nm and nothing else, and the advice says why the number is
+redder than usual.
 
 **Whether you need the second line is your call, not the tool's.** How much signal
 a fluorophore gives depends on how well it is expressed in that brain, which the

@@ -73,8 +73,12 @@
    * at once: they are still climbing at 1040 nm, so there is no top to cross to
    * and the cap holds. */
   var CAP_REACH = 40;      // the furthest past the cap a peak may be, in nm
-  var CAP_MARGIN = 1.25;   // and the least it must be worth to go there
+  var CAP_MARGIN = 1.25;   // the least one fluorophore must gain to go there
+  var CAP_KEEP = 0.95;     // and the most any other may lose in the process
   var CAP_SETTLE = 0.97;   // stop at the near edge of a broad top, not its middle
+  var CAP_OUTDONE = 1.1;   // how much better something redder may be, and it
+                           // still counts as a top rather than a slope
+  var CAP_EVIDENCE = 20;   // nm of measured curve required beyond a claimed top
   var DEFAULT_MIN_WL = 760;
   var EM_LO = 380, EM_HI = 800;   // integration window for emission / detection
 
@@ -453,18 +457,56 @@
     var capBase = cap;
     if (cap != null) {
       var solo = laserGrid(lasers[0], minWl, 2);
-      var score = solo.map(function (wl) { return evalVec([wl]).obj; });
-      var under = 0, peak = null;
+      var ev = solo.map(function (wl) { return evalVec([wl]); });
+      var score = ev.map(function (r) { return r.obj; });
+      var under = null, peak = null;
       solo.forEach(function (wl, i) {
-        if (wl <= cap) { if (score[i] > under) under = score[i]; }
-        else if (wl <= cap + CAP_REACH && (!peak || score[i] > peak.obj)) {
-          peak = { wl: wl, obj: score[i] };
-        }
+        if (wl <= cap) { if (!under || score[i] > under.obj) under = ev[i]; }
+        else if (wl <= cap + CAP_REACH && (!peak || score[i] > peak.obj)) peak = ev[i];
       });
-      var topped = peak && solo.every(function (wl, i) {
-        return wl <= peak.wl || score[i] <= peak.obj * 1.0001;
-      });
-      if (topped && under > 0 && peak.obj >= under * CAP_MARGIN) {
+      /* Who is this excursion for, and does anybody pay for it?
+       *
+       * Asked of each fluorophore rather than of the combined score, because the
+       * combination hides the very case this is for: eYFP doubles between 940 and
+       * 960 while dTomato, which is half of tdTomato and so dominates the
+       * harmonic mean, barely moves - and the aggregate gain came out under the
+       * bar even though nothing was being given up. So somebody has to gain
+       * properly and nobody may lose. One fluorophore paying for another's peak
+       * is a trade, and a trade is not what the cap should be let out for. */
+      var gainer = -1, gain = 1, worst = 1;
+      if (peak && under && peak.obj > under.obj) {
+        usable.forEach(function (s, i) {
+          if (!(under.raw[i] > 0)) return;
+          var r = peak.raw[i] / under.raw[i];
+          if (r > gain) { gain = r; gainer = i; }
+          if (r < worst) worst = r;
+        });
+      }
+
+      /* And is it actually a top? Judged on that fluorophore's own curve, not on
+       * the objective: the context penalty is already pulling the objective down
+       * above 950 nm, so read there every curve looks like it is peaking, and
+       * DsRed2 - which climbs all the way to the end of its data - came out as a
+       * maximum at 970 nm. Judged on the raw cross-section it does not, and
+       * neither do tdTomato or mCherry.
+       *
+       * The tolerance matters at the other end: eYFP shoulders about 1% above its
+       * own peak a few nm further out, and read strictly that says "still
+       * climbing" and holds the cap 20 nm short of a maximum worth twice as much.
+       * Anything genuinely on a slope beats it by far more than 10%.
+       *
+       * The curve must also carry on past the peak: "nothing above this is
+       * better" is trivially true where there is nothing above it at all. */
+      var worth = false;
+      if (gainer >= 0 && gain >= CAP_MARGIN && worst >= CAP_KEEP) {
+        var g = usable[gainer];
+        var gc = (absolute && g.gmCurve) ? g.gmCurve : g.twopCurve;
+        worth = !!gc && gc.x1 >= peak.wl + CAP_EVIDENCE &&
+          solo.every(function (wl, i) {
+            return wl <= peak.wl || ev[i].raw[gainer] <= peak.raw[gainer] * CAP_OUTDONE;
+          });
+      }
+      if (worth) {
         cap = peak.wl;
         // a broad top is entered at its near edge: no need to run redder than
         // the gain does, and +/-10 nm is rarely what matters anyway
