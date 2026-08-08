@@ -36,7 +36,7 @@ GUI started: given a set of fluorophores, tell the user what wavelength to use.
 
 ## Running it
 
-It is a static site with no build step and no dependencies. Open `index.html`
+It is a static site with no build step and no dependencies. Locally: open `index.html`
 directly, or serve the directory:
 
 ```
@@ -48,6 +48,8 @@ variants via plain `<script>` tags, so **it works straight off the filesystem** 
 unlike the previous viewer. The only feature that needs an HTTP server is the
 on-demand filter library (`data/filter-library/*.json`), which is fetched lazily when
 you open the filter picker.
+
+From GitHub, enable GitHub pages and then: [https://SWC-Advanced-Microscopy.github.io/brainsaw_channel_chooser](https://SWC-Advanced-Microscopy.github.io/brainsaw_channel_chooser)
 
 ## Microscopes
 
