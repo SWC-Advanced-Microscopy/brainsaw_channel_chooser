@@ -61,7 +61,8 @@
       if (filters[k].curve) filters[k]._curve = new SV.Curve(filters[k].curve);
     });
     CORE.lasers.forEach(function (l) {
-      l._curve = new SV.Curve({ xy: l.curve });
+      l._curve = new SV.Curve({ xy: l.curve });          // shape, for the chart
+      if (l.powerMw) l._power = new SV.Curve({ xy: l.powerMw });  // mW, for the model
     });
   }
 
@@ -577,7 +578,13 @@
         ? 'Best worst-case across ' + n + ' fluorophore' + (n > 1 ? 's' : '')
         : 'Best average signal across ' + n + ' fluorophore' + (n > 1 ? 's' : '')) + '.');
     }
-    if (focus) subParts.push(laser().name + ' at ' + pct(focus.power) + ' of peak power here.');
+    if (focus) {
+      // absolute power at the sample, which is what decides whether a
+      // wavelength is usable - not how far down the tuning curve it sits
+      subParts.push(focus.mw != null
+        ? laser().name + ': about ' + Math.round(focus.mw) + ' mW at the sample here.'
+        : laser().name + ' at ' + pct(focus.power) + ' of peak power here.');
+    }
     $('hero-sub').textContent = subParts.join(' ');
 
     // alternatives
@@ -659,7 +666,7 @@
   /* Candidate-shaped stats for an arbitrary wavelength. */
   function evaluateAt(sel, wl, rec) {
     var L = laser();
-    var pw = SV.optics.powerWeight(L._curve, wl, L.range);
+    var pw = SV.optics.powerWeight(L, wl);
     var cw = SV.optics.contextWeight(wl, state.ctxStrength);
     var usable = sel.filter(function (s) { return s.twopCurve; });
     var per = usable.map(function (s) { return Math.max(0, s.twopCurve.at(wl)) * pw * cw; });
@@ -668,6 +675,7 @@
       : (per.length ? Math.min.apply(null, per) : 0);
     return {
       wl: wl, obj: obj, per: per, power: L._curve.at(wl), ctx: cw,
+      mw: SV.optics.sampleMw(L, wl),
       rel: rec && rec.best && rec.best.obj ? obj / rec.best.obj : 1,
     };
   }
@@ -787,6 +795,9 @@
     });
     var L = laser();
     out.push({ label: 'Laser', tag: 'nominal', text: L.name + ' — ' + L.note, modelled: true });
+    out.push({ label: 'Power model', tag: 'assumption', modelled: true,
+      text: 'Tuning curves are absolute (peak ' + Math.round(L.peakMw || 0) + ' mW at the head). ' +
+        'The model assumes 20% of that reaches the sample and that a scan wants ~100 mW there.' });
 
     $('provenance').innerHTML = '<ul class="prov-list">' + out.map(function (o) {
       return '<li class="prov-item"><b>' + SV.escapeHtml(o.label) + '</b>' +
@@ -800,17 +811,23 @@
   /* The table view: the numbers behind the excitation chart, at 10 nm steps.
    * Present so the charts are never the only way to read the data. */
   function renderDataTable(sel) {
+    var laserCell = function (wl) {
+      var mw = SV.optics.sampleMw(laser(), wl);
+      if (mw == null) return pct(laser()._curve.at(wl));
+      var inRange = wl >= laser().range[0] && wl <= laser().range[1];
+      return inRange ? Math.round(mw) : '–';
+    };
     var tbl = $('data-table');
     if (!sel.length) { tbl.innerHTML = ''; return; }
     var lo = EXC_LO, hi = EXC_HI, step = 10;
     var head = '<thead><tr><th>nm</th>' + sel.map(function (s) {
       return '<th>' + SV.escapeHtml(s.fluor.name) + '</th>';
-    }).join('') + '<th>Laser</th></tr></thead>';
+    }).join('') + '<th>Laser (mW at sample)</th></tr></thead>';
     var rows = [];
     for (var wl = lo; wl <= hi; wl += step) {
       rows.push('<tr><td>' + wl + '</td>' + sel.map(function (s) {
         return '<td>' + (s.twopCurve ? pct(s.twopCurve.at(wl)) : '–') + '</td>';
-      }).join('') + '<td class="dim">' + pct(laser()._curve.at(wl)) + '</td></tr>');
+      }).join('') + '<td class="dim">' + laserCell(wl) + '</td></tr>');
     }
     tbl.innerHTML = head + '<tbody>' + rows.join('') + '</tbody>';
   }

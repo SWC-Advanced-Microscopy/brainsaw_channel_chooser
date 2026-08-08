@@ -119,14 +119,16 @@ score = sigma2(L) x powerWeight(L) x contextWeight(L)
 ```
 
 - **`sigma2`** — the 2p curve normalised to its own peak.
-- **`powerWeight` saturates.** Above ~50% of the laser's peak power, more power
-  does not improve the answer. Without saturation the model recommends 800 nm for
-  GFP, where a Ti:Sapph peaks, instead of 920 nm. Nobody is power-limited on GFP
-  at 920 on a healthy eHP.
-- **`contextWeight`** penalises above ~950 nm — Ti:Sapph output falls away, and
-  there is little background autofluorescence to give anatomical context for
-  registering sections. This is why tdTomato alone is not imaged at 1050 nm
-  despite its peak sitting there. Adjustable via a slider.
+- **`powerWeight` is absolute, in mW at the sample.** See §9 — a laser well down
+  its tuning curve but still delivering a watt is fine, so the question is never
+  "how far down the curve am I" but "is there still ~100 mW at the sample". The
+  weight is 1 wherever there is enough, and falls as the square of the shortfall
+  below it, because two-photon signal goes as the square of the power.
+- **`contextWeight`** penalises above ~950 nm, for the one problem up there that
+  belongs to the sample rather than the laser: there is little background
+  autofluorescence to give anatomical context for registering sections. This is
+  why tdTomato alone is not imaged at 1050 nm despite its peak sitting there.
+  Adjustable via a slider.
 
 **760 nm is a hard floor, not a penalty.** Below it the laser is less stable and
 the embedding agar autofluoresces heavily, so those wavelengths are not used
@@ -148,16 +150,17 @@ alternatives appear, which is the honest answer.
 
 ### A correction worth remembering
 
-The nominal MaiTai tuning curve was originally far too pessimistic at the long end
-(32% of peak at 950 nm; a real eHP DeepSee holds ~60%). That suppressed everything
-above 900 nm and hid sensible choices. It was corrected, which moved tdTomato from
-760 → 980 nm and eGFP + tdTomato from 920 → 980 nm.
+The laser was originally modelled as a *fraction of peak*, and the assumed MaiTai
+shape was far too pessimistic at the long end. Both were wrong, and §9 replaced
+them: tuning curves are now absolute mW from manufacturer datasheets, and the
+question they answer is whether ~100 mW still reaches the sample. That removed
+the need to guess how pessimistic a curve should be, and it stopped the model
+penalising the red end of lasers — an InSight, an Axon — that have power to
+spare there.
 
-**The laser curve drives every recommendation above ~900 nm and is inferred, not
-measured.** Because `powerWeight` saturates and the corrected curve is flat across
-750–1000 nm, the >950 nm penalty is now the main brake on long wavelengths.
-Measuring the actual rig would materially improve the answers. If a result reads
-too red, strengthen the penalty rather than re-touching the laser curve.
+**Alternatives must also be non-dominated by the other alternatives**, not just by
+the top pick. Otherwise 890 nm rides in behind 920 nm, which beats it for every
+fluorophore.
 
 ## 6. Which channels to acquire
 
@@ -217,8 +220,49 @@ via plain `<script>` tags, so **it works straight off the filesystem** — the
 explicit pain point in the old viewer's README. Only the on-demand filter library
 needs an HTTP server.
 
-## 9. Still open
+
+## 9. Lasers
+You need to understand how the laser works in this scenario. We image at with the laser by scanning it over the sample to record emitted photons at each location and build up an image over time on the PC. We scan with a power of around 100 mW at the sample most times. For really bright stuff we may go down to around 70 mW at the sample. For dimmer cases maybe about 150 mW. We rarely do 200 mW. A laser will typically emit somewhere between 750 mW and 4 W depending on the laser source itself and the wavelength. There are significant loses in the optical pathway. Those loses will be different for different rigs but let's estimate them as 80%. So a 1W output should give us enough power: around 200 mW. But a 600 mW output, say, might not. Thus your model of the laser tuning curve does not have to as strict as it is. This should help you answer these issues you brought up:
 
 - The MaiTai tuning curve should be measured (see §5).
-- Whether 980 nm is the right answer for an eGFP + tdTomato pair, or whether the
-  >950 nm penalty should be stronger.
+- Whether 980 nm is the right answer for an eGFP + tdTomato pair, or whether the >950 nm penalty should be stronger.
+
+We have wavelength tunable lasers. These are Ti:Sph lasers such as the SpectraPhysics Mai Tai, SpectraPhysics Insight, Coherent Chameleon and Coherent Discovery, and LightConversion Cronus-2p. Then we have single line lasers, such as the Coherent Axon 1064. These are fibre lasers. Not Ti:Sph. 
+So when the user, for example, sets the web app to a 1040 nm single line laser you should be careful with printing things like "Above ~950 nm there is very little background autofluorescence, so the other channels give you almost no anatomical context to register sections against. Ti:Sapphire output is also falling away fast here." There is no Ti:Sph output here. Plus the single line lasers have much power. So the it's true background is low but it's not true we lack power in this case.
+
+### What §9 changed
+
+Acted on in full:
+
+- **Power is absolute, not relative.** `SAMPLE_TARGET_MW = 100`,
+  `PATH_TRANSMISSION = 0.20`, and a square-law falloff below the target. Both
+  open questions at the end of §9 are answered by this: the Mai Tai curve no
+  longer needs measuring for the model to behave (only for exact numbers), and
+  the >950 nm penalty did not need strengthening.
+- **Laser kind is respected in the prose.** "Ti:Sapphire output is falling away
+  fast here too" is now appended only when the laser really is a Ti:Sapphire
+  *and* it really is short of power there. The background-scarcity sentence
+  stands on its own, because that is true of every laser.
+- **Fixed-line lasers say so.** Their range is pinned to the single wavelength,
+  no alternatives are offered, and the text states plainly that this is the only
+  wavelength available rather than a recommendation.
+- **The generic 1040 nm laser is gone**, replaced by the Coherent Axon 1064
+  (and an Axon 920 alongside it).
+
+Lasers modelled, all from published datasheet figures at typical rather than
+worst-case output:
+
+| Laser | Kind | Range | Anchors |
+|---|---|---|---|
+| Mai Tai eHP DeepSee | Ti:Sapphire | 690–1040 | >2.6 W @ 800, >1.38 W @ 920, >330 mW @ 1040 |
+| Mai Tai HP DeepSee | Ti:Sapphire | 690–1040 | same shape, ~12% lower |
+| InSight X3 | OPO | 680–1300 | 1.4 W @ 800, 1.8 W @ 900, 1.6 W @ 1000, 1.2 W @ 1200 |
+| Chameleon Ultra II | Ti:Sapphire | 680–1080 | 3.5 W @ 800, 1.6 W @ 920, 550 mW @ 1020, 200 mW @ 1080 |
+| Chameleon Discovery NX | OPO | 660–1320 | 3.6 W @ 800, 3.2 W @ 900, 2.7 W @ 1000, 1.9 W @ 1300 |
+| CRONUS-2P | OPCPA | 680–1300 | >3 W @ 920 (output A), >2.5 W @ 1100 (output B) |
+| Axon 920 / Axon 1064 | Fibre | fixed | 1 W |
+
+Not found and therefore not modelled: per-unit measured tuning curves for any of
+these (manufacturers publish guaranteed minima at a few wavelengths plus a graph,
+not tabulated data), and the Coherent Discovery's and CRONUS-2P's fixed secondary
+outputs, which are separate beams rather than points on a tuning curve.

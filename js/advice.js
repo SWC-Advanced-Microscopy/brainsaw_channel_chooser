@@ -35,37 +35,69 @@
     /* Per-fluorophore percentages are deliberately NOT repeated here - they are
      * already in the bar chart above and in the chart's hover readout. */
 
-    /* --- laser power ------------------------------------------------------ */
-    var p = best.power;
-    if (p < 0.35) {
+    /* --- laser power -------------------------------------------------------
+     *
+     * Judged in absolute terms, not as a fraction of peak: what matters is
+     * whether ~100 mW still reaches the sample. A laser well down its tuning
+     * curve but still putting out a watt is not worth mentioning. */
+    var mw = best.mw;
+    if (mw != null) {
+      if (mw < 60) {
+        items.push({ kind: 'warn', text:
+          'At ' + best.wl + ' nm your ' + laser.name + ' gives roughly ' + Math.round(mw) +
+          ' mW at the sample once the optical path has taken its cut. That is below the ' +
+          '~100 mW a normal scan wants, so expect to run wide open and still be short of ' +
+          'signal on deeper sections.' });
+      } else if (mw < 100) {
+        items.push({ kind: 'info', text:
+          'Power is getting tight here — around ' + Math.round(mw) + ' mW at the sample, ' +
+          'against the ~100 mW a normal scan uses. Fine for bright labels, marginal for ' +
+          'dim ones.' });
+      }
+    } else if (best.power < 0.35) {
       items.push({ kind: 'warn', text:
-        'Your ' + laser.name + ' delivers roughly ' + pct(p) + ' of its peak power at ' +
-        best.wl + ' nm, so this is a power-limited choice — expect to open the Pockels ' +
-        'cell well up, and check you still have headroom on deep sections.' });
-    } else if (p < 0.6) {
-      items.push({ kind: 'info', text:
-        'Power is down to about ' + pct(p) + ' of peak at ' + best.wl + ' nm. Usually fine, ' +
-        'but worth checking before a long overnight run.' });
+        'Your ' + laser.name + ' delivers roughly ' + pct(best.power) + ' of its peak power ' +
+        'at ' + best.wl + ' nm, so this is a power-limited choice.' });
     }
 
     /* --- the >950 nm problem ---------------------------------------------- */
     if (best.wl > 950) {
-      items.push({ kind: 'info', text:
-        'Above ~950 nm there is very little background autofluorescence, so the ' +
-        'other channels give you almost no anatomical context to register sections ' +
-        'against. Ti:Sapphire output is also falling away fast here.' });
+      /* The scarcity of background autofluorescence up here is a property of the
+       * sample and applies to every laser. Whether the laser is also running out
+       * of power is a separate question, and only true of a Ti:Sapphire. */
+      var txt = 'Above ~950 nm there is very little background autofluorescence, so the ' +
+        'other channels give you almost no anatomical context to register sections against.';
+      if (laser.kind === 'Ti:Sapphire' && best.mw != null && best.mw < 100) {
+        txt += ' Ti:Sapphire output is falling away fast here too.';
+      }
+      items.push({ kind: 'info', text: txt });
       var lower = rec.allCandidates.filter(function (c) { return c.wl <= 950; })
         .sort(function (a, b) { return b.obj - a.obj; })[0];
-      if (lower && lower.obj > 0) {
-        items.push({ kind: 'info', text:
-          'If that matters more than raw signal, ' + lower.wl + ' nm is the best choice at or ' +
-          'below 950 nm, at ' + pct(lower.obj / best.obj) + ' of the signal you would get at ' +
-          best.wl + ' nm.' });
+      // skip if it is already going to be listed as an alternative below
+      var listed = rec.candidates.some(function (c) { return lower && c.wl === lower.wl; });
+      if (lower && lower.obj > 0 && !listed && laser.tunable !== false) {
+        // the user can drag the marker anywhere, so "the alternative" is not
+        // necessarily worse than where they are standing
+        items.push({ kind: 'info', text: lower.obj > best.obj * 1.02
+          ? 'If that matters more than raw signal, ' + lower.wl + ' nm is the best choice at ' +
+            'or below 950 nm — and it scores better than ' + best.wl + ' nm anyway.'
+          : 'If that matters more than raw signal, ' + lower.wl + ' nm is the best choice at or ' +
+            'below 950 nm, at ' + pct(lower.obj / best.obj) + ' of the signal you would get at ' +
+            best.wl + ' nm.' });
       }
     }
 
+    /* --- fixed-line lasers -------------------------------------------------
+     * Nothing to choose, so say what you have got rather than pretending. */
+    if (laser.tunable === false) {
+      items.push({ kind: 'info', text:
+        'The ' + laser.name + ' is a single-line source, so ' + best.wl + ' nm is not a ' +
+        'recommendation — it is the only wavelength you have. The chart shows how well ' +
+        'your selection is excited there.' });
+    }
+
     /* --- alternatives ------------------------------------------------------ */
-    rec.candidates.filter(function (c) {
+    (laser.tunable === false ? [] : rec.candidates).filter(function (c) {
       return c.wl !== best.wl;
     }).slice(0, 2).forEach(function (c, altIndex) {
       var better = [], worse = [];
@@ -74,15 +106,19 @@
         if (d > 0.08) better.push(s.fluor.name);
         else if (d < -0.08) worse.push(s.fluor.name);
       });
-      var txt = c.wl + ' nm is ' + (altIndex === 0 ? 'the next best option' : 'also worth a look') +
-        ' (' + pct(c.obj / best.obj) + ' of the score at ' + best.wl + ' nm)';
+      var ratio = best.obj ? c.obj / best.obj : 1;
+      var txt = ratio > 1.02
+        ? c.wl + ' nm scores better than ' + best.wl + ' nm (' +
+          (ratio >= 1.5 ? ratio.toFixed(1) + '\u00d7' : pct(ratio) + ' of it') + ')'
+        : c.wl + ' nm is ' + (altIndex === 0 ? 'the next best option' : 'also worth a look') +
+          ' (' + pct(ratio) + ' of the score at ' + best.wl + ' nm)';
       if (better.length) txt += ', better for ' + list(better);
       if (worse.length) txt += (better.length ? ' but' : ',') + ' worse for ' + list(worse);
       items.push({ kind: 'alt', text: txt + '.', wl: c.wl });
     });
 
     /* --- convention vs the measured optimum -------------------------------- */
-    if (usable.length === 1) {
+    if (usable.length === 1 && laser.tunable !== false) {
       var conv = CONVENTIONAL[usable[0].fluor.id];
       if (conv && Math.abs(conv.wl - best.wl) > 20) {
         var inRange = conv.wl >= Math.max(laser.range[0], rec.minWl) && conv.wl <= laser.range[1];

@@ -11,18 +11,29 @@
  *   sigma2        the fluorophore's 2p curve, normalised to its own peak, so
  *                 s is "fraction of the best this fluorophore can do".
  *
- *   powerWeight   how much of the laser's peak power is available at L. This
- *                 SATURATES: past POWER_REF you have enough power and more does
- *                 not help. Without saturation the model recommends 800 nm for
- *                 GFP (where a Ti:Sapph peaks) instead of 920 nm, which is wrong
- *                 in practice - nobody is power-limited on GFP at 920 on a
- *                 healthy eHP.
+ *   powerWeight   whether the laser can still put enough light on the sample at
+ *                 L. This is an ABSOLUTE question, not a "how far down the
+ *                 tuning curve am I" one: imaging wants around 100 mW at the
+ *                 sample (70 mW for bright labels, 150-200 for dim ones), and
+ *                 with ~80% loss through the optical path that means ~500 mW
+ *                 out of the laser head as a floor and ~1 W as comfortable.
+ *                 A laser sitting at 20% of its peak can still be entirely
+ *                 fine. So the weight is 1 wherever there is enough power, and
+ *                 falls off as the SQUARE of the shortfall below it, because
+ *                 two-photon signal goes as the square of the power.
  *
- *   contextWeight a penalty above ~950 nm. Two separate problems: Ti:Sapph
- *                 lasers put out little there, and there is almost no background
- *                 autofluorescence to give anatomical context in the other
- *                 channels. This is why tdTomato alone is usually not imaged at
- *                 1050 nm even though its S0->S1 peak sits at 1052 nm.
+ *                 Modelling this in relative terms was wrong twice over: it
+ *                 pushed GFP towards 800 nm where a Ti:Sapph peaks, and it
+ *                 penalised long wavelengths on lasers - an InSight, an Axon -
+ *                 that have plenty of power there.
+ *
+ *   contextWeight a penalty above ~950 nm, for the one problem that is a
+ *                 property of the sample rather than the laser: there is almost
+ *                 no background autofluorescence that far out, so the other
+ *                 channels give you nothing to register sections against. This
+ *                 is why tdTomato alone is usually not imaged at 1050 nm even
+ *                 though its S0->S1 peak sits at 1052 nm. Laser power at the red
+ *                 end is powerWeight's business, not this one's.
  *
  * Short wavelengths are a hard floor rather than a penalty: below ~760 nm the
  * laser is less stable and the embedding agar autofluoresces heavily, so those
@@ -37,8 +48,10 @@
 (function (SV) {
   'use strict';
 
-  var POWER_REF = 0.50;  // fraction of peak power that counts as "enough"
-  var POWER_EXP = 1.5;   // how sharply signal falls once you are power-limited
+  var SAMPLE_TARGET_MW = 100;   // power wanted at the sample for a typical scan
+  var PATH_TRANSMISSION = 0.20; // fraction of head power that reaches the sample
+  var POWER_EXP = 2;            // 2p signal goes as the square of the power
+  var POWER_REF = 0.50;         // fallback for curves with no absolute data
   var CTX_FULL = 950;    // below this there is still usable background signal
   var CTX_SPAN = 110;    // nm above CTX_FULL over which the penalty ramps in
   var CTX_MAX = 0.4;
@@ -172,9 +185,26 @@
 
   /* --------------------------------------------------------- weighting */
 
-  function powerWeight(laserCurve, wl, range) {
+  /* mW at the sample, given the laser and the losses in the optical path. */
+  function sampleMw(laser, wl) {
+    if (!laser || !laser._power) return null;
+    return Math.max(0, laser._power.at(wl)) * PATH_TRANSMISSION;
+  }
+
+  /* 1 while there is enough power to image with, falling as the square of the
+   * shortfall below that. Takes the whole laser record so it can work in mW. */
+  function powerWeight(laser, wl) {
+    var range = laser && laser.range;
     if (range && (wl < range[0] || wl > range[1])) return 0;
-    var p = laserCurve ? laserCurve.at(wl) : 1;
+
+    var mw = sampleMw(laser, wl);
+    if (mw != null) {
+      if (mw <= 0) return 0;
+      return Math.pow(Math.min(1, mw / SAMPLE_TARGET_MW), POWER_EXP);
+    }
+
+    // No absolute data (a hand-edited curve): fall back to relative weighting.
+    var p = laser && laser._curve ? laser._curve.at(wl) : 1;
     if (p <= 0) return 0;
     return Math.pow(Math.min(1, p / POWER_REF), POWER_EXP);
   }
@@ -214,10 +244,10 @@
     var hi = Math.min(1320, Math.ceil(range[1]));
 
     var usable = selection.filter(function (s) { return s.twopCurve; });
-    if (!usable.length || hi <= lo) return null;
+    if (!usable.length || hi < lo) return null;   // hi === lo for a fixed-line laser
 
     var scoreAt = function (wl) {
-      var pw = powerWeight(laserCurve, wl, range);
+      var pw = powerWeight(laser, wl);
       var cw = contextWeight(wl, ctxStrength);
       var per = usable.map(function (s) {
         return Math.max(0, s.twopCurve.at(wl)) * pw * cw;
@@ -230,7 +260,11 @@
       } else {
         obj = Math.min.apply(null, per);
       }
-      return { obj: obj, per: per, power: laserCurve ? laserCurve.at(wl) : 1, ctx: cw };
+      return {
+        obj: obj, per: per, ctx: cw,
+        power: laserCurve ? laserCurve.at(wl) : 1,   // fraction of the laser's peak
+        mw: sampleMw(laser, wl),                     // mW at the sample, or null
+      };
     };
 
     // full 1 nm score curve, for plotting and for finding the raw optimum
@@ -256,11 +290,21 @@
       var sc = scoreAt(c);
       if (sc.obj <= 0) continue;
       cands.push({
-        wl: c, obj: sc.obj, per: sc.per, power: sc.power, ctx: sc.ctx,
+        wl: c, obj: sc.obj, per: sc.per, power: sc.power, mw: sc.mw, ctx: sc.ctx,
         rel: sc.obj / best.obj,
         nice: niceness(c) + (NICE.indexOf(c) >= 0 ? 1 : 0),
       });
     }
+    /* A single-line laser (an Axon) has no round wavelength inside its range,
+     * so fall back to its one wavelength rather than returning nothing. */
+    if (!cands.length) {
+      var only = scoreAt(best.wl);
+      cands.push({
+        wl: best.wl, obj: only.obj, per: only.per, power: only.power, mw: only.mw,
+        ctx: only.ctx, rel: 1, nice: niceness(best.wl),
+      });
+    }
+
     cands.sort(function (a, b) {
       // within 2% treat as equivalent and prefer the rounder / more conventional
       if (Math.abs(a.rel - b.rel) < 0.02) return b.nice - a.nice || b.obj - a.obj;
@@ -280,8 +324,8 @@
      * With a single fluorophore nothing can beat the optimum for it, so there are
      * correctly no alternatives at all.
      */
-    var beatsSomething = function (c) {
-      return c.per.some(function (v, i) { return v > top.per[i] * 1.02; });
+    var beats = function (c, p) {
+      return c.per.some(function (v, i) { return v > p.per[i] * 1.02; });
     };
 
     var picks = [top];
@@ -289,7 +333,10 @@
       if (picks.length >= 4) return;
       if (c.obj < 0.15 * top.obj) return;
       if (picks.some(function (p) { return Math.abs(p.wl - c.wl) < 30; })) return;
-      if (!beatsSomething(c)) return;
+      // must be non-dominated by everything already offered, not just by the
+      // top pick - otherwise 890 nm rides in behind 920 nm, which it loses to
+      // for every fluorophore
+      if (!picks.every(function (p) { return beats(c, p); })) return;
       picks.push(c);
     });
 
@@ -317,6 +364,7 @@
     bgLabel: bgLabel,
     planChannels: planChannels,
     powerWeight: powerWeight,
+    sampleMw: sampleMw,
     contextWeight: contextWeight,
     recommend: recommend,
     EM_LO: EM_LO,

@@ -97,10 +97,10 @@ spectrum is kept this way rather than dropped silently.
 
 Two things on the page are **not** measured data and are labelled as such:
 
-- **Laser tuning curves** — nominal shapes normalised to peak, used only as a
-  relative weighting. Edit `LASERS` in `build/fetch_data.py` to match your own rig.
-  These matter more than they look: the MaiTai curve drives every recommendation
-  above ~900 nm, and measuring your own would materially improve the answers.
+- **Laser tuning curves** — absolute average power in mW, interpolated from the
+  minima manufacturers publish at a handful of wavelengths, at roughly typical
+  rather than worst-case output. Edit `LASERS` in `build/fetch_data.py` to match
+  your own rig.
 - **Background estimates** in "Channels to acquire" — a heuristic for how much
   tissue and agar autofluorescence a channel sees, not a measurement.
 
@@ -119,12 +119,19 @@ score = sigma2(L) x powerWeight(L) x contextWeight(L)
 
 - `sigma2` is the 2p curve normalised to its own peak, so the score reads as
   "fraction of the best this fluorophore can do".
-- `powerWeight` **saturates** — above ~50% of the laser's peak power, more power
-  does not improve the answer. Without this the model recommends 800 nm for GFP,
-  where a Ti:Sapph peaks, instead of 920 nm.
-- `contextWeight` penalises above ~950 nm, where Ti:Sapph power falls away and
-  there is little background autofluorescence to give anatomical context for
-  registering sections.
+- `powerWeight` asks an **absolute** question: can the laser still put enough
+  light on the sample here? A scan wants around 100 mW at the sample (70 for
+  bright labels, 150–200 for dim ones), and roughly 80% is lost in the optical
+  path, so ~500 mW out of the head is the floor and 1 W is comfortable. The
+  weight is 1 wherever there is enough, and falls as the *square* of the
+  shortfall below it, since two-photon signal goes as the square of the power.
+  A laser at 20% of its peak can be entirely fine — which is why this is not
+  modelled as a fraction of peak. Doing that was wrong twice over: it pushed GFP
+  towards 800 nm where a Ti:Sapph peaks, and it penalised the red end on lasers
+  that have plenty of power there.
+- `contextWeight` penalises above ~950 nm, for the one thing up there that is a
+  property of the sample rather than the laser: there is little background
+  autofluorescence to give anatomical context for registering sections.
 
 Short wavelengths are a **hard floor**, not a penalty: nothing below 760 nm is
 ever suggested, because the laser is less stable there and the embedding agar
@@ -151,9 +158,25 @@ is the honest answer.
 The >950 nm penalty is the opinionated part and is a slider — set it to zero to
 score on measured cross-section and laser power alone.
 
-Sanity checks against normal practice: eGFP → 920 nm, eGFP + tdTomato → 920 nm,
-tdTomato on an InSight X3 → 1040 nm, mCherry → 760 nm (its 740 nm peak is below
-the floor).
+Sanity checks against normal practice: eGFP → 920 nm, mCherry → 760 nm (its
+740 nm peak is below the floor), tdTomato → 1040 nm on an InSight or a Discovery
+and 1010 nm on a Mai Tai, which runs out of power past that. eGFP + tdTomato
+comes out at 980 nm on the worst-case objective, because 920 nm leaves tdTomato
+at under a quarter of its own best; 920 and 950 are both offered as alternatives.
+
+### Lasers
+
+| Laser | Range | Notes |
+|---|---|---|
+| Spectra-Physics Mai Tai eHP / HP DeepSee | 690–1040 nm | Ti:Sapphire; ~2.7 W at 800 nm, 330 mW at 1040 |
+| Spectra-Physics InSight X3 | 680–1300 nm | ~2 W right across the red end |
+| Coherent Chameleon Ultra II | 680–1080 nm | Ti:Sapphire; 3.5 W at 800 nm, 210 mW at 1080 |
+| Coherent Chameleon Discovery NX | 660–1320 nm | Watts everywhere; fixed 1040 nm second beam not modelled |
+| Light Conversion CRONUS-2P | 680–1300 nm | Two tunable outputs treated as one range; fixed 1025 nm output not modelled |
+| Coherent Axon 920 / 1064 | fixed | Single-line fibre lasers, 1 W. Nothing to recommend — the page just shows how well your selection does there |
+
+Fixed-line lasers are pinned to their one wavelength, so the page reports how
+well the selection is excited rather than pretending to choose.
 
 ### Which channels to acquire
 

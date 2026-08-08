@@ -246,48 +246,136 @@ BRAINSAW = {
 }
 
 
-# MaiTai eHP DeepSee nominal tuning curve, normalised to its peak near 800 nm.
-# Approximates the published shape for the eHP family: a broad flat top and a
-# gradual roll-off, still delivering roughly 60% of peak at 950 nm and ~20% at
-# 1040 nm. Getting this right matters - an over-pessimistic long end suppresses
-# every wavelength past 900 nm and hides sensible choices like 950 nm for a
-# GFP/tdTomato pair. Editable in the UI, and only ever used as a relative
-# weighting, never as an absolute power claim.
-MAITAI_TUNING = [
-    (690, 0.25), (700, 0.35), (710, 0.45), (720, 0.55), (730, 0.65), (740, 0.74),
-    (750, 0.82), (760, 0.88), (770, 0.93), (780, 0.97), (790, 0.99), (800, 1.00),
-    (810, 1.00), (820, 0.99), (830, 0.98), (840, 0.96), (850, 0.94), (860, 0.92),
-    (870, 0.90), (880, 0.87), (890, 0.84), (900, 0.81), (910, 0.77), (920, 0.74),
-    (930, 0.70), (940, 0.67), (950, 0.63), (960, 0.59), (970, 0.55), (980, 0.51),
-    (990, 0.47), (1000, 0.43), (1010, 0.38), (1020, 0.33), (1030, 0.28), (1040, 0.22),
+# ------------------------------------------------------------------------ lasers
+#
+# Tuning curves are held in ABSOLUTE average power at the laser head, in mW,
+# not as a fraction of peak. That matters because what decides whether a
+# wavelength is usable is not "how far down the tuning curve am I" but "can I
+# still put ~100 mW on the sample". With ~80% loss in the optical path, roughly
+# 500 mW out of the head is the floor and 1 W is comfortable, so a laser can sit
+# at 20% of its peak and still be perfectly fine. See js/optics.js.
+#
+# Values are typical, drawn from manufacturer datasheets. Datasheets quote
+# guaranteed minima at a handful of wavelengths; the numbers here interpolate
+# those anchors into a smooth curve at roughly typical (not worst-case) output.
+# They are nominal, never a claim about any individual laser - measure your own
+# if you want the recommendations to be exact.
+
+# Spectra-Physics Mai Tai eHP DeepSee. Datasheet minima: >540 mW @ 690,
+# >1.38 W @ 710, >2.6 W @ 800, >1.38 W @ 920, >330 mW @ 1040.
+MAITAI_EHP = [
+    (690, 600), (700, 900), (710, 1200), (720, 1500), (740, 1950), (760, 2300),
+    (780, 2580), (800, 2700), (820, 2700), (840, 2600), (860, 2450), (880, 2250),
+    (900, 2000), (920, 1750), (940, 1450), (960, 1150), (980, 880), (1000, 640),
+    (1020, 450), (1040, 330),
 ]
 
-LASERS = [
-    {"id": "maitai-ehp-ds", "name": "Spectra-Physics MaiTai eHP DeepSee",
-     "kind": "Ti:Sapphire", "range": [690, 1040], "curve": MAITAI_TUNING,
-     "note": "Nominal tuning curve, normalised to peak. Edit to match your own laser."},
-    {"id": "insight-x3", "name": "Spectra-Physics InSight X3", "kind": "OPO",
-     "range": [680, 1300],
-     "curve": [(680, 0.25), (700, 0.40), (720, 0.52), (740, 0.62), (760, 0.71),
-               (780, 0.79), (800, 0.86), (820, 0.91), (840, 0.95), (860, 0.98),
-               (880, 1.00), (900, 1.00), (920, 0.98), (940, 0.96), (960, 0.93),
-               (980, 0.90), (1000, 0.86), (1020, 0.82), (1040, 0.78), (1060, 0.73),
-               (1080, 0.68), (1100, 0.62), (1150, 0.48), (1200, 0.34), (1250, 0.21),
-               (1300, 0.10)],
-     "note": "Nominal OPO tuning curve. Retains useful power well past 1000 nm."},
-    {"id": "chameleon-ultra-ii", "name": "Coherent Chameleon Ultra II",
-     "kind": "Ti:Sapphire", "range": [680, 1080],
-     "curve": [(690, 0.18), (700, 0.30), (720, 0.48), (740, 0.62), (760, 0.74),
-               (780, 0.85), (800, 0.94), (820, 0.99), (840, 1.00), (860, 0.98),
-               (880, 0.94), (900, 0.88), (920, 0.81), (940, 0.73), (960, 0.64),
-               (980, 0.55), (1000, 0.45), (1020, 0.34), (1040, 0.24), (1060, 0.14),
-               (1080, 0.06)],
-     "note": "Nominal tuning curve. Holds power to slightly longer wavelengths than a MaiTai."},
-    {"id": "fixed-1040", "name": "Fixed 1040 nm fibre laser", "kind": "Fibre",
-     "range": [1035, 1045],
-     "curve": [(1035, 0.0), (1038, 1.0), (1042, 1.0), (1045, 0.0)],
-     "note": "Single-line source; the recommender can only ever return 1040 nm."},
+# Mai Tai HP DeepSee - same shape, the slightly lower-power sibling.
+MAITAI_HP = [(wl, round(mw * 0.88)) for wl, mw in MAITAI_EHP]
+
+# Spectra-Physics InSight X3. Datasheet (X3 A) minima: >0.9 W @ 700,
+# >1.4 W @ 800, >1.8 W @ 900, >1.6 W @ 1000, >1.4 W @ 1100, >1.2 W @ 1200,
+# >0.9 W @ 1300. Typical output runs above those.
+INSIGHT_X3 = [
+    (680, 800), (700, 1100), (750, 1450), (800, 1750), (850, 2050), (900, 2250),
+    (950, 2200), (1000, 2050), (1050, 1950), (1100, 1800), (1150, 1650),
+    (1200, 1500), (1250, 1300), (1300, 1100),
 ]
+
+# Coherent Chameleon Ultra II. Datasheet minima: >650 mW @ 680, >1.6 W @ 700,
+# >3.5 W @ 800, >1.6 W @ 920, >550 mW @ 1020, >200 mW @ 1080.
+CHAMELEON_ULTRA_II = [
+    (680, 700), (700, 1650), (720, 2200), (740, 2600), (760, 2950), (780, 3300),
+    (800, 3500), (820, 3450), (840, 3300), (860, 3050), (880, 2700), (900, 2250),
+    (920, 1700), (940, 1350), (960, 1100), (980, 900), (1000, 720), (1020, 570),
+    (1040, 430), (1060, 310), (1080, 210),
+]
+
+# Coherent Chameleon Discovery NX. Datasheet: 2.0 W @ 700, 3.6 W @ 800,
+# 3.2 W @ 900, 2.7 W @ 1000, 2.3 W @ 1200, 1.9 W @ 1300, over 660-1320 nm.
+DISCOVERY_NX = [
+    (660, 1100), (680, 1550), (700, 2000), (750, 2900), (800, 3600), (850, 3450),
+    (900, 3200), (950, 2950), (1000, 2700), (1100, 2500), (1200, 2300),
+    (1300, 1900), (1320, 1800),
+]
+
+# Light Conversion CRONUS-2P. Two independently tunable outputs, A over
+# 680-960 nm (>3 W @ 920) and B over 960-1300 nm (>2.5 W @ 1100). Treated here
+# as one continuous source, since from the microscope's point of view you tune
+# whichever output covers the wavelength you want.
+CRONUS_2P = [
+    (680, 1500), (700, 2000), (750, 2600), (800, 3000), (850, 3200), (900, 3200),
+    (920, 3000), (960, 2500), (1000, 2600), (1100, 2500), (1200, 2200), (1300, 1800),
+]
+
+
+def fixed_line(centre, mw, halfwidth=3):
+    """Curve for a single-line (fixed wavelength) laser.
+
+    The range is pinned to the single wavelength, so the recommender can only
+    ever return that one number; the couple of nm either side exist purely so
+    the overlay has something to draw.
+    """
+    return [(centre - halfwidth, mw), (centre, mw), (centre + halfwidth, mw)]
+
+
+LASERS = [
+    {"id": "maitai-ehp-ds", "name": "Spectra-Physics Mai Tai eHP DeepSee",
+     "kind": "Ti:Sapphire", "tunable": True, "range": [690, 1040],
+     "power": MAITAI_EHP,
+     "note": "Typical output from the datasheet minima (>2.6 W at 800 nm, "
+             ">1.38 W at 920 nm, >330 mW at 1040 nm). Nominal, not measured."},
+    {"id": "maitai-hp-ds", "name": "Spectra-Physics Mai Tai HP DeepSee",
+     "kind": "Ti:Sapphire", "tunable": True, "range": [690, 1040],
+     "power": MAITAI_HP,
+     "note": "The lower-power, longer-pulse sibling of the eHP. Same tuning "
+             "shape, roughly 12% less power."},
+    {"id": "insight-x3", "name": "Spectra-Physics InSight X3",
+     "kind": "OPO", "tunable": True, "range": [680, 1300],
+     "power": INSIGHT_X3,
+     "note": "Gap-free 680-1300 nm. Holds ~2 W past 1000 nm, so unlike a "
+             "Ti:Sapphire it is not power-limited at the red end."},
+    {"id": "chameleon-ultra-ii", "name": "Coherent Chameleon Ultra II",
+     "kind": "Ti:Sapphire", "tunable": True, "range": [680, 1080],
+     "power": CHAMELEON_ULTRA_II,
+     "note": "High power at the Ti:Sapphire peak (>3.5 W at 800 nm), falling "
+             "away above 950 nm much as a Mai Tai does."},
+    {"id": "discovery-nx", "name": "Coherent Chameleon Discovery NX",
+     "kind": "OPO", "tunable": True, "range": [660, 1320],
+     "power": DISCOVERY_NX,
+     "note": "660-1320 nm with watts everywhere. There is also a fixed 3.5 W "
+             "1040 nm second beam, not modelled here."},
+    {"id": "cronus-2p", "name": "Light Conversion CRONUS-2P",
+     "kind": "OPCPA", "tunable": True, "range": [680, 1300],
+     "power": CRONUS_2P,
+     "note": "Two tunable outputs (680-960 and 960-1300 nm) treated as one "
+             "range. A third fixed output at 1025 nm is not modelled."},
+    {"id": "axon-920", "name": "Coherent Axon 920 (fixed line)",
+     "kind": "Fibre", "tunable": False, "range": [920, 920],
+     "power": fixed_line(920, 1000),
+     "note": "Single-line fibre laser, 1 W at 920 nm. Not tunable, so the only "
+             "question it answers is how well your fluorophores do at 920 nm."},
+    {"id": "axon-1064", "name": "Coherent Axon 1064 (fixed line)",
+     "kind": "Fibre", "tunable": False, "range": [1064, 1064],
+     "power": fixed_line(1064, 1000),
+     "note": "Single-line fibre laser, 1 W at 1064 nm. Plenty of power for "
+             "red probes, but nothing to give you an anatomical background."},
+]
+
+
+def laser_record(spec):
+    """Emit both the absolute power curve (mW) and a normalised one.
+
+    The recommender works in absolute mW - "have I got enough power at the
+    sample" - while the chart overlay only needs a shape, so it uses the
+    normalised copy and stays on the same axis as everything else.
+    """
+    peak = max(mw for _, mw in spec["power"]) or 1
+    out = {k: v for k, v in spec.items() if k != "power"}
+    out["powerMw"] = [[wl, round(mw, 1)] for wl, mw in spec["power"]]
+    out["peakMw"] = round(peak, 1)
+    out["curve"] = [[wl, round(mw / peak, 4)] for wl, mw in spec["power"]]
+    return out
 
 
 # ------------------------------------------------------------------------ build
@@ -484,7 +572,7 @@ def build():
         "minWavelength": MIN_WL,
         "fluorophores": fluorophores,
         "filters": filters,
-        "lasers": LASERS,
+        "lasers": [laser_record(l) for l in LASERS],
         "scopes": [BRAINSAW],
         "sources": {
             "F": {"label": "FPbase", "units": "relative",
