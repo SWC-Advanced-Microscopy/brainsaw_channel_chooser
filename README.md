@@ -26,9 +26,9 @@ GUI started: given a set of fluorophores, tell the user what wavelength to use.
   with where emission lands — bleed-through, uncapturable fluorophores, pairs the
   filter set cannot separate — is reported here rather than with the wavelength
   advice at the top.
-- **Channel assignment** — how each fluorophore splits across the channels, what
-  fraction of its emission is captured at all, and which pairs the filter set
-  cannot separate.
+- **Channel assignment** — how each fluorophore splits across the channels, and
+  what fraction of its emission is captured at all. Channels read blue to far red
+  everywhere on the page, matching the emission chart.
 - **Configurable hardware** — BrainSaw 1 loads by default; any channel can be
   swapped for any of ~4,000 filters from the FPbase library, and the whole setup
   is encoded in the URL so it can be shared.
@@ -122,7 +122,11 @@ score = sigma2(L) x powerWeight(L) x contextWeight(L)
 - `powerWeight` asks an **absolute** question: can the laser still put enough
   light on the sample here? A scan wants around 100 mW at the sample (70 for
   bright labels, 150–200 for dim ones), and roughly 80% is lost in the optical
-  path, so ~500 mW out of the head is the floor and 1 W is comfortable. The
+  path, so ~500 mW out of the head is the floor and 1 W is comfortable. Those
+  losses vary from rig to rig and this tool does not know yours, so the figure is
+  used internally to decide whether a wavelength is power-limited and is **never
+  reported as a power at the sample** — that would be a measurement, and it is
+  not one. The
   weight is 1 wherever there is enough, and falls as the *square* of the
   shortfall below it, since two-photon signal goes as the square of the power.
   A laser at 20% of its peak can be entirely fine — which is why this is not

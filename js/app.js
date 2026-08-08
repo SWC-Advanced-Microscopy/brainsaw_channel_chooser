@@ -91,9 +91,13 @@
   /* Channels are always held in ascending centre-wavelength order, so every list
    * and table on the page reads blue-to-red like the emission chart above them. */
   function sortChannels() {
-    state.channels.sort(function (a, b) {
-      return (filterCentre(a.spectrum) || 0) - (filterCentre(b.spectrum) || 0);
-    });
+    // Unknown centres sort last rather than to zero: a channel whose curve has
+    // not loaded yet must not push itself to the front of the list.
+    var centre = function (c) {
+      var v = filterCentre(c.spectrum);
+      return v == null ? Infinity : v;
+    };
+    state.channels.sort(function (a, b) { return centre(a) - centre(b); });
   }
 
   /* Colour for a fluorophore: the hue of the light it actually emits. */
@@ -582,13 +586,6 @@
         ? 'Best worst-case across ' + n + ' fluorophore' + (n > 1 ? 's' : '')
         : 'Best average signal across ' + n + ' fluorophore' + (n > 1 ? 's' : '')) + basis + '.');
     }
-    if (focus) {
-      // absolute power at the sample, which is what decides whether a
-      // wavelength is usable - not how far down the tuning curve it sits
-      subParts.push(focus.mw != null
-        ? laser().name + ': about ' + Math.round(focus.mw) + ' mW at the sample here.'
-        : laser().name + ' at ' + pct(focus.power) + ' of peak power here.');
-    }
     $('hero-sub').textContent = subParts.join(' ');
 
     // alternatives
@@ -763,13 +760,13 @@
       state.channels.map(function (c) {
         return '<th>' + SV.escapeHtml(c.name) + '</th>';
       }).join('') +
-      '<th>Capture</th><th>Assigned</th></tr></thead>';
+      '<th>Capture</th></tr></thead>';
     var body = bd.rows.map(function (row, i) {
       var s = sel[i];
       if (!s.fluor._em) {
         return '<tr><td><span class="cell-name"><i style="background:' + s.color + '"></i>' +
           SV.escapeHtml(s.fluor.name) + '</span></td>' +
-          '<td class="dim" colspan="' + (state.channels.length + 2) + '">no emission spectrum on file</td></tr>';
+          '<td class="dim" colspan="' + (state.channels.length + 1) + '">no emission spectrum on file</td></tr>';
       }
       var cells = row.frac.map(function (v) {
         return '<td class="heat" style="--v:' + v.toFixed(3) + '"><span>' +
@@ -778,8 +775,7 @@
       var cls = row.total < 0.05 ? 'warn' : row.total > 0.2 ? 'good' : '';
       return '<tr><td><span class="cell-name"><i style="background:' + s.color + '"></i>' +
         SV.escapeHtml(s.fluor.name) + '</span></td>' + cells +
-        '<td><span class="badge ' + cls + '">' + pct(row.total) + '</span></td>' +
-        '<td>' + (row.best >= 0 ? SV.escapeHtml(state.channels[row.best].name) : '—') + '</td></tr>';
+        '<td><span class="badge ' + cls + '">' + pct(row.total) + '</span></td></tr>';
     }).join('');
     tbl.innerHTML = head + '<tbody>' + body + '</tbody>';
   }
@@ -806,8 +802,9 @@
     var L = laser();
     out.push({ label: 'Laser', tag: 'nominal', text: L.name + ' — ' + L.note, modelled: true });
     out.push({ label: 'Power model', tag: 'assumption', modelled: true,
-      text: 'Tuning curves are absolute (peak ' + Math.round(L.peakMw || 0) + ' mW at the head). ' +
-        'The model assumes 20% of that reaches the sample and that a scan wants ~100 mW there.' });
+      text: 'Wavelengths are judged on whether the laser\u2019s own output is enough, assuming ' +
+        'typical losses between the laser and the sample. The tool does not know your rig\u2019s ' +
+        'throughput, so it never states a power at the sample.' });
 
     $('provenance').innerHTML = '<ul class="prov-list">' + out.map(function (o) {
       return '<li class="prov-item"><b>' + SV.escapeHtml(o.label) + '</b>' +
@@ -821,23 +818,17 @@
   /* The table view: the numbers behind the excitation chart, at 10 nm steps.
    * Present so the charts are never the only way to read the data. */
   function renderDataTable(sel) {
-    var laserCell = function (wl) {
-      var mw = SV.optics.sampleMw(laser(), wl);
-      if (mw == null) return pct(laser()._curve.at(wl));
-      var inRange = wl >= laser().range[0] && wl <= laser().range[1];
-      return inRange ? Math.round(mw) : '–';
-    };
     var tbl = $('data-table');
     if (!sel.length) { tbl.innerHTML = ''; return; }
     var lo = EXC_LO, hi = EXC_HI, step = 10;
     var head = '<thead><tr><th>nm</th>' + sel.map(function (s) {
       return '<th>' + SV.escapeHtml(s.fluor.name) + '</th>';
-    }).join('') + '<th>Laser (mW at sample)</th></tr></thead>';
+    }).join('') + '</tr></thead>';
     var rows = [];
     for (var wl = lo; wl <= hi; wl += step) {
       rows.push('<tr><td>' + wl + '</td>' + sel.map(function (s) {
         return '<td>' + (s.twopCurve ? pct(s.twopCurve.at(wl)) : '–') + '</td>';
-      }).join('') + '<td class="dim">' + laserCell(wl) + '</td></tr>');
+      }).join('') + '</tr>');
     }
     tbl.innerHTML = head + '<tbody>' + rows.join('') + '</tbody>';
   }
@@ -1251,6 +1242,11 @@
     makeCharts();
 
     hydrateExternalFilters().then(function () {
+      // only now are all the curves present, so centres are known and the
+      // blue-to-red ordering can be settled - including for shared links,
+      // which carry whatever order they were saved in
+      centreCache = {};
+      sortChannels();
       renderAll();
     });
   }

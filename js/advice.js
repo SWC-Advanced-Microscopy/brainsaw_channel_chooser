@@ -42,21 +42,24 @@
      * curve but still putting out a watt is not worth mentioning. */
     var mw = best.mw;
     if (mw != null) {
+      /* Deliberately says nothing about milliwatts at the sample. What reaches
+       * the sample depends on the rig's throughput, which this tool has no way
+       * of knowing - it assumes a typical figure internally to decide whether a
+       * wavelength is power-limited, and that assumption is not a measurement to
+       * quote back at anyone. */
       if (mw < 60) {
         items.push({ kind: 'warn', text:
-          'At ' + best.wl + ' nm your ' + laser.name + ' gives roughly ' + Math.round(mw) +
-          ' mW at the sample once the optical path has taken its cut. That is below the ' +
-          '~100 mW a normal scan wants, so expect to run wide open and still be short of ' +
-          'signal on deeper sections.' });
+          'Your ' + laser.name + ' is near the end of its range at ' + best.wl + ' nm, and ' +
+          'output there is low enough that you are likely to be power-limited — expect to ' +
+          'run wide open and still be short of signal on deeper sections.' });
       } else if (mw < 100) {
         items.push({ kind: 'info', text:
-          'Power is getting tight here — around ' + Math.round(mw) + ' mW at the sample, ' +
-          'against the ~100 mW a normal scan uses. Fine for bright labels, marginal for ' +
-          'dim ones.' });
+          'Laser output is getting thin at ' + best.wl + ' nm. Fine for bright labels, ' +
+          'marginal for dim ones — worth checking you have the headroom before a long run.' });
       }
     } else if (best.power < 0.35) {
       items.push({ kind: 'warn', text:
-        'Your ' + laser.name + ' delivers roughly ' + pct(best.power) + ' of its peak power ' +
+        'Your ' + laser.name + ' delivers roughly ' + pct(best.power) + ' of its peak output ' +
         'at ' + best.wl + ' nm, so this is a power-limited choice.' });
     }
 

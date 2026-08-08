@@ -214,9 +214,19 @@ These came up repeatedly and are worth stating as rules:
 4. **No advice the user cannot act on.** Suggestions that a different laser would
    do better were removed; the laser is not something they can change.
 5. Channel order is always **blue → red**, matching the emission chart above.
+   This has to survive a shared link too: channels arrive from the URL in
+   whatever order they were saved in, and the sort only settles once every
+   filter curve has loaded and its centre is known.
 6. Charts use a **single y axis**; overlays that would need a second scale are
    expressed in the same relative units or dropped.
 7. Modelled or heuristic values are always labelled where they appear.
+8. **Never state a power at the sample.** The model needs a throughput figure to
+   decide whether a wavelength is power-limited, and assumes one, but what
+   actually reaches the sample depends on a rig calibration this tool does not
+   have. Quoting the assumption back as a number would be presenting a guess as a
+   measurement. Talk about the laser's own output instead.
+9. Do not show a column that carries no decision — the matrix's "Assigned"
+   column just repeated the largest number in its own row.
 
 ## 8. Deployment
 
