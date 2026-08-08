@@ -1868,8 +1868,10 @@
     }
     prepare();
 
-    var stored = 'auto';
-    try { stored = localStorage.getItem('sv-theme') || 'auto'; } catch (e) { /* private mode */ }
+    /* Dark unless this machine has said otherwise: the charts are luminous
+     * traces on a dark ground, which is how they look on the rig. */
+    var stored = 'dark';
+    try { stored = localStorage.getItem('sv-theme') || 'dark'; } catch (e) { /* private mode */ }
     applyTheme(stored);
 
     /* Where the rig comes from, in order of authority:
