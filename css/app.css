@@ -497,8 +497,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   display: block; height: 5px; border-radius: 3px;
   background: var(--surface-sunk); overflow: hidden;
 }
+/* Every bar the same neutral. Accenting the anatomy channel's bar looked like
+ * the bar was drawn in its channel's colour, because the anatomy channel is
+ * usually Blue and the accent is a blue. The chip, the tinted border and the
+ * reason text all say which row it is already. */
 .acq-bg-fill { display: block; height: 100%; background: var(--text-muted); border-radius: 3px; }
-.role-background .acq-bg-fill { background: var(--accent); }
 .acq-bg-label { display: block; font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 /* the caption sits on its own line so "very little" does not shred the column */
 .acq-bg-label em {
