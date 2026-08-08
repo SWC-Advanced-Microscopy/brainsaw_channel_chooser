@@ -38,7 +38,11 @@
 
   var state = {
     scopeId: CORE.scopes[0].id,
-    laserId: CORE.scopes[0].laser,
+    scopeName: CORE.scopes[0].name,
+    blockerNm: CORE.scopes[0].blockerNm || 700,
+    laserIds: [],            // every laser fitted to this rig
+    laserMode: 'single',     // 'single' | 'simultaneous' | 'sequential'
+    activeLaserId: null,     // the one the marker drags and the hero reports
     selected: [],            // [{id, source}]
     channels: [],
     dichroics: [],
@@ -83,11 +87,118 @@
     });
   }
 
-  function laser() {
-    return CORE.lasers.filter(function (l) { return l.id === state.laserId; })[0] || CORE.lasers[0];
+  function laserById(id) {
+    return CORE.lasers.filter(function (l) { return l.id === id; })[0] || null;
   }
-  function scope() {
-    return CORE.scopes.filter(function (s) { return s.id === state.scopeId; })[0] || CORE.scopes[0];
+
+  /* Every laser fitted to the rig, in the order they were added. */
+  function rigLasers() {
+    var out = state.laserIds.map(laserById).filter(Boolean);
+    return out.length ? out : [CORE.lasers[0]];
+  }
+
+  /* The lasers the model should actually consider. In single mode that is the
+   * active one alone; otherwise it is all of them. */
+  function activeLasers() {
+    var all = rigLasers();
+    if (state.laserMode === 'single') return [laser()];
+    return all;
+  }
+
+  /* The laser the headline number and the draggable marker belong to. */
+  function laser() {
+    var all = rigLasers();
+    var hit = all.filter(function (l) { return l.id === state.activeLaserId; })[0];
+    if (hit) return hit;
+    var tunable = all.filter(function (l) { return l.tunable !== false; })[0];
+    return tunable || all[0];
+  }
+  /* ---------------------------------------------------------- microscopes
+   *
+   * A microscope is a small JSON object: name, channels and their filters, the
+   * laser blocking filter, and the lasers fitted. The two BrainSaws ship as
+   * files in configs/ and are vendored into data/microscopes.js; anything a user
+   * imports or saves is the same shape, so there is one code path for all of
+   * them. Hardware only - how you choose to work is not part of the rig.
+   */
+  var SCHEMA = 'swc-channel-chooser/microscope';
+  var LS_SAVED = 'sv.microscopes';
+  var LS_LAST = 'sv.last-microscope';
+
+  function lsGet(key, fallback) {
+    try {
+      var raw = window.localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+  }
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private mode */ }
+  }
+
+  function savedScopes() {
+    var v = lsGet(LS_SAVED, []);
+    return Array.isArray(v) ? v : [];
+  }
+  function scopeLibrary() {
+    return CORE.scopes.concat(savedScopes());
+  }
+  function scopeById(id) {
+    return scopeLibrary().filter(function (s) { return s.id === id; })[0] || CORE.scopes[0];
+  }
+  function scope() { return scopeById(state.scopeId); }
+
+  /* The rig as it stands, in config form. */
+  function currentConfig(name) {
+    var fl = allFilters();
+    return {
+      schema: SCHEMA,
+      version: 1,
+      id: state.scopeId,
+      name: name || state.scopeName,
+      blockerNm: state.blockerNm,
+      lasers: state.laserIds.slice(),
+      channels: state.channels.map(function (c) {
+        var f = fl[c.spectrum];
+        return { name: c.name, filter: f ? f.name : c.filter, spectrum: c.spectrum };
+      }),
+    };
+  }
+
+  /* Filters are stored by name as well as by id, because a name survives a
+   * rebuild of the library and is what a person reading the file understands. */
+  function resolveChannelFilter(ch) {
+    if (ch.spectrum && (filters[ch.spectrum] || extraFilters[ch.spectrum])) return ch.spectrum;
+    if (ch.filter && INDEX) {
+      var hit = INDEX.filters.filter(function (f) { return f.n === ch.filter; })[0];
+      if (hit) return hit.id;
+    }
+    return ch.spectrum || null;
+  }
+
+  function applyConfig(cfg) {
+    loadScope({
+      id: cfg.id || 'imported-' + Date.now().toString(36),
+      name: cfg.name || 'Imported microscope',
+      blockerNm: cfg.blockerNm,
+      lasers: cfg.lasers,
+      channels: (cfg.channels || []).map(function (c) {
+        return { name: c.name, filter: c.filter, spectrum: resolveChannelFilter(c) };
+      }),
+    });
+  }
+
+  /* Imported and saved rigs live in the microscope dropdown next to the two
+   * BrainSaws, so a facility machine can carry a few and switch between them. */
+  function rememberScope(cfg) {
+    var list = savedScopes().filter(function (s) { return s.id !== cfg.id; });
+    list.push(cfg);
+    lsSet(LS_SAVED, list);
+  }
+  function forgetScope(id) {
+    lsSet(LS_SAVED, savedScopes().filter(function (s) { return s.id !== id; }));
+  }
+  function isSaved(id) {
+    return savedScopes().some(function (s) { return s.id === id; });
   }
   function isDark() {
     return document.documentElement.dataset.resolvedTheme === 'dark';
@@ -96,12 +207,38 @@
     return Object.assign({}, filters, extraFilters);
   }
 
+  /* What a channel actually passes: its own filter, cut off at the laser
+   * blocking filter in front of the detectors. Matters most for a long-pass
+   * emission filter like ET570lp, whose upper edge is set by the blocker and
+   * not by the filter at all. */
+  var effCache = {};
+  function channelCurve(ch) {
+    var f = allFilters()[ch.spectrum];
+    if (!f || !f._curve) return null;
+    var blocker = state.blockerNm || 700;
+    var key = ch.spectrum + '@' + blocker;
+    if (!effCache[key]) effCache[key] = SV.clipCurve(f._curve, blocker);
+    return effCache[key];
+  }
+
   function loadScope(sc) {
+    state.scopeId = sc.id;
+    state.scopeName = sc.name;
+    state.blockerNm = sc.blockerNm == null ? 700 : sc.blockerNm;
     state.channels = (sc.channels || []).map(function (c) {
-      return { name: c.name, label: c.label, spectrum: c.spectrum, pmt: c.pmt };
+      return { name: c.name, label: c.label, spectrum: c.spectrum, filter: c.filter };
     });
     sortChannels();
-    state.laserId = sc.laser || state.laserId;
+    state.laserIds = (sc.lasers || [sc.laser]).filter(Boolean);
+    if (!state.laserIds.length) state.laserIds = [CORE.lasers[0].id];
+    state.activeLaserId = null;
+    // a rig with two lasers fitted is presumed to use them; 'one at a time' is
+    // still a click away, and mode is a way of working rather than hardware, so
+    // it is not part of the config file
+    state.laserMode = state.laserIds.length > 1
+      ? (state.laserMode === 'single' ? 'simultaneous' : state.laserMode)
+      : 'single';
+    state.chosenWl = null;
   }
 
   /* Channels are always held in ascending centre-wavelength order, so every list
@@ -195,6 +332,8 @@
     renderFluorList();
     renderSelected();
     renderChannels();
+    renderLasers();
+    renderScopeControls();
     renderCharts();
     renderRecommendation();
     renderMatrix();
@@ -355,6 +494,105 @@
 
   function shortName(n) { return n.replace(/^(Semrock|Chroma|Alluxa|Omega|Thorlabs)\s+/, ''); }
 
+  /* -- rail: lasers ------------------------------------------------------ */
+
+  var LASER_MODES = [
+    { id: 'single', label: 'One at a time',
+      note: 'Only the selected laser is on. Everything is scored against that one.' },
+    { id: 'simultaneous', label: 'All on together',
+      note: 'Every beam on at once, so each fluorophore collects excitation from all of them.' },
+    { id: 'sequential', label: 'One pass per laser',
+      note: 'Image once with each laser and merge, so every fluorophore gets the beam that suits it.' },
+  ];
+
+  function renderLasers() {
+    var list = $('laser-list');
+    var all = rigLasers();
+    var activeId = laser().id;
+    list.innerHTML = '';
+
+    all.forEach(function (l, idx) {
+      var li = document.createElement('li');
+      li.className = 'chan-item' + (l.id === activeId && all.length > 1 ? ' is-active' : '');
+
+      var sel = document.createElement('select');
+      sel.className = 'laser-pick';
+      CORE.lasers.forEach(function (opt) {
+        var o = new Option(opt.name, opt.id);
+        o.selected = opt.id === l.id;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', function () {
+        if (state.activeLaserId === state.laserIds[idx]) state.activeLaserId = sel.value;
+        state.laserIds[idx] = sel.value;
+        state.chosenWl = null;
+        renderAll();
+      });
+
+      var text = document.createElement('span');
+      text.className = 'chan-text';
+      var range = document.createElement('span');
+      range.className = 'chan-filter';
+      range.textContent = l.tunable === false
+        ? 'fixed line, ' + l.range[0] + ' nm'
+        : l.range[0] + '–' + l.range[1] + ' nm';
+      text.appendChild(sel);
+      text.appendChild(range);
+
+      var actions = document.createElement('span');
+      actions.className = 'chan-actions';
+      if (all.length > 1) {
+        // In single mode any laser can be the one you are using, including a
+        // fixed line. In the other modes the button only points the marker at a
+        // laser, and there is nothing to point at on a single-line source.
+        var offerButton = state.laserMode === 'single' || l.tunable !== false;
+        if (l.id !== activeId && offerButton) {
+          var use = document.createElement('button');
+          use.className = 'btn small ghost';
+          use.type = 'button';
+          use.textContent = state.laserMode === 'single' ? 'Use' : 'Tune';
+          use.title = state.laserMode === 'single'
+            ? 'Make this the laser everything is scored against'
+            : 'Point the draggable marker at this laser';
+          use.addEventListener('click', function () {
+            state.activeLaserId = l.id;
+            state.chosenWl = null;
+            renderAll();
+          });
+          actions.appendChild(use);
+        }
+        var rm = document.createElement('button');
+        rm.className = 'btn small ghost icon';
+        rm.type = 'button';
+        rm.setAttribute('aria-label', 'Remove laser');
+        rm.textContent = '✕';
+        rm.addEventListener('click', function () {
+          state.laserIds.splice(idx, 1);
+          if (state.activeLaserId === l.id) state.activeLaserId = null;
+          if (state.laserIds.length < 2) state.laserMode = 'single';
+          state.chosenWl = null;
+          renderAll();
+        });
+        actions.appendChild(rm);
+      }
+
+      li.appendChild(text);
+      li.appendChild(actions);
+      list.appendChild(li);
+    });
+
+    // mode only means anything once there is more than one laser on the rig
+    var modeWrap = $('laser-mode-wrap');
+    modeWrap.hidden = all.length < 2;
+    $('laser-mode').value = state.laserMode;
+    var mode = LASER_MODES.filter(function (m) { return m.id === state.laserMode; })[0];
+    $('laser-mode-note').textContent = mode ? mode.note : '';
+
+    // the two-pass option is honest about not being buildable yet
+    var warn = $('laser-mode-warning');
+    warn.hidden = !(all.length > 1 && state.laserMode === 'sequential');
+  }
+
   /* -- charts ------------------------------------------------------------ */
   function makeCharts() {
     charts.exc = new SV.Chart($('chart-exc'), {
@@ -453,8 +691,22 @@
 
     var zones = [];
     var tint = dark ? 'rgba(255,255,255,.035)' : 'rgba(20,20,15,.04)';
-    if (L.range[0] > EXC_LO) zones.push({ x0: EXC_LO, x1: L.range[0], color: tint, label: 'outside laser range' });
-    if (L.range[1] < EXC_HI) zones.push({ x0: L.range[1], x1: EXC_HI, color: tint, label: 'outside laser range' });
+    // shade what no laser on the rig can reach, which with two of them is the
+    // gap outside the union of their ranges rather than outside either one
+    var covered = activeLasers().map(function (l) {
+      return [Math.max(EXC_LO, l.range[0]), Math.min(EXC_HI, l.range[1])];
+    }).filter(function (r) { return r[1] >= r[0]; })
+      .sort(function (a, b) { return a[0] - b[0]; });
+    var cursor = EXC_LO;
+    covered.forEach(function (r) {
+      if (r[0] > cursor) {
+        zones.push({ x0: cursor, x1: r[0], color: tint, label: 'outside laser range' });
+      }
+      cursor = Math.max(cursor, r[1]);
+    });
+    if (cursor < EXC_HI) {
+      zones.push({ x0: cursor, x1: EXC_HI, color: tint, label: 'outside laser range' });
+    }
     if (state.ctxStrength > 0) {
       zones.push({
         x0: 950, x1: EXC_HI,
@@ -473,10 +725,25 @@
     charts.exc.setSeries(excSeries);
 
     var wl = chosenWavelength(rec);
-    charts.exc.setMarkers(wl ? [{
-      id: 'wl', x: wl, color: cssVar('--accent'), draggable: true,
-      label: wl + ' nm', width: 2,
-    }] : []);
+    var markers = [];
+    if (wl != null) {
+      markers.push({
+        id: 'wl', x: wl, color: cssVar('--accent'),
+        draggable: L.tunable !== false,     // a fixed line has one wavelength
+        label: wl + ' nm', width: 2,
+      });
+      // the other beams are shown too, but you cannot drag them - they belong to
+      // a different laser, and only one is under the marker at a time
+      var beams = (evaluateAt(sel, wl, rec) || {}).beams || [];
+      beams.forEach(function (b, i) {
+        if (i === rec.active || b.wl == null) return;
+        markers.push({
+          id: 'beam-' + b.laser.id, x: b.wl, color: cssVar('--text-muted'),
+          label: b.wl + ' nm', width: 1.5, dash: [4, 4],
+        });
+      });
+    }
+    charts.exc.setMarkers(markers);
 
     $('exc-sub').textContent = gm
       ? 'Absolute action cross-section — only Drobizhev and Zipfel curves have absolute units'
@@ -498,10 +765,11 @@
     if (state.overlays.filters) {
       state.channels.forEach(function (ch) {
         var f = fl[ch.spectrum];
-        if (!f || !f._curve) return;
+        var curve = channelCurve(ch);
+        if (!f || !curve) return;
         emSeries.push({
           id: 'ch-' + ch.spectrum, label: ch.name + ' · ' + shortName(f.name),
-          color: filterColor(ch.spectrum), curve: f._curve, kind: 'band',
+          color: filterColor(ch.spectrum), curve: curve, kind: 'band',
           width: 1, fillAlpha: 0.16,
           hidden: !!state.hidden['ch-' + ch.spectrum],
         });
@@ -547,6 +815,8 @@
   function recOpts() {
     return {
       mode: state.objective,
+      combine: state.laserMode,
+      activeId: laser().id,
       contextStrength: state.ctxStrength,
       minWl: state.minWl,
     };
@@ -554,10 +824,10 @@
   var _recCache = null, _recKey = '';
   function currentRec(sel) {
     var key = JSON.stringify([state.selected.map(sourceFor), state.selected.map(function (s) { return s.id; }),
-      state.laserId, state.objective, state.ctxStrength, state.minWl]);
+      state.laserIds, state.laserMode, laser().id, state.objective, state.ctxStrength, state.minWl]);
     if (key === _recKey) return _recCache;
     _recKey = key;
-    _recCache = sel.length ? SV.optics.recommend(sel, laser(), recOpts()) : null;
+    _recCache = sel.length ? SV.optics.recommend(sel, activeLasers(), recOpts()) : null;
     return _recCache;
   }
   function chosenWavelength(rec) {
@@ -566,6 +836,7 @@
   }
 
   function breakdown(sel) {
+    state.channels.forEach(function (ch) { ch._curve = channelCurve(ch); });
     return SV.optics.channelBreakdown(
       sel.map(function (s) { return s.fluor; }),
       state.channels, allFilters());
@@ -602,6 +873,28 @@
         ? 'Best worst-case across ' + n + ' fluorophore' + (n > 1 ? 's' : '')
         : 'Best average signal across ' + n + ' fluorophore' + (n > 1 ? 's' : '')) + basis + '.');
     }
+    // with more than one laser on the rig, the answer is a wavelength each -
+    // the hero number is the one you are tuning, the rest are listed beneath
+    var beams = $('hero-beams');
+    beams.innerHTML = '';
+    var focusBeams = focus && focus.beams ? focus.beams : (rec && rec.best ? rec.best.beams : null);
+    if (focusBeams && focusBeams.length > 1) {
+      subParts.push(state.laserMode === 'sequential'
+        ? 'One pass per laser.'
+        : 'Both beams on together.');
+      focusBeams.forEach(function (b, i) {
+        var span = document.createElement('span');
+        span.className = 'beam' + (i === (rec ? rec.active : 0) ? ' is-active' : '');
+        var who = (state.laserMode === 'sequential' && rec && focus)
+          ? rec.usable.filter(function (u, k) { return focus.from[k] === i; })
+              .map(function (u) { return u.fluor.name; })
+          : [];
+        span.innerHTML = '<b>' + b.wl + ' nm</b>' +
+          '<i>' + SV.escapeHtml(b.laser.name) + (who.length ? ' · ' + SV.escapeHtml(who.join(', ')) : '') + '</i>';
+        beams.appendChild(span);
+      });
+    }
+
     $('hero-sub').textContent = subParts.join(' ');
 
     // alternatives
@@ -632,9 +925,23 @@
     var bars = $('hero-bars');
     bars.innerHTML = '';
     if (focus) {
+      /* With two beams on the sample a fluorophore is excited by both, so the
+       * bar has to combine them the same way the model does - otherwise
+       * tdTomato reads 23% while an Axon sits on its peak. */
+      var beamsFor = focus.beams || [];
+      var excitation = function (s) {
+        if (beamsFor.length < 2) return s.twopCurve.at(wl);
+        var v = 0;
+        beamsFor.forEach(function (b) {
+          if (!b.pw) return;
+          var t = s.twopCurve.at(b.wl);
+          v = state.laserMode === 'sequential' ? Math.max(v, t) : v + t;
+        });
+        return v;
+      };
       sel.forEach(function (s, i) {
         if (!s.twopCurve) return;
-        var raw = s.twopCurve.at(wl);
+        var raw = excitation(s);
         var row = document.createElement('div');
         row.className = 'bar-row';
         row.innerHTML =
@@ -643,24 +950,37 @@
             '<div class="bar-track"><span class="bar-fill" style="width:' +
               (clamp(raw, 0, 1) * 100).toFixed(1) + '%;background:' + s.color + '"></span></div></div>' +
           '<div class="bar-val">' + pct(raw) + '</div>';
-        row.title = s.fluor.name + ' at ' + wl + ' nm: ' + pct(raw) + ' of its own two-photon peak (' +
+        row.title = s.fluor.name + ': ' + pct(raw) + ' of its own two-photon peak (' +
           (s.twopPeak ? Math.round(s.twopPeak) + ' nm' : 'unknown') + ')';
         bars.appendChild(row);
       });
       var hdr = document.createElement('p');
       hdr.className = 'rail-note';
-      hdr.textContent = 'Share of each fluorophore’s own two-photon peak at ' + wl +
-        ' nm, before laser power and detection are applied.';
+      var where = beamsFor.length > 1
+        ? (state.laserMode === 'sequential'
+            ? 'in whichever pass suits it'
+            : 'with both beams on')
+        : 'at ' + wl + ' nm';
+      hdr.textContent = 'Share of each fluorophore\u2019s own two-photon peak ' + where +
+        ', before laser power and detection are applied.';
       bars.appendChild(hdr);
     }
 
-    // channels to acquire
+    // channels to acquire. Background autofluorescence comes from the bluest
+    // beam on the sample, so with two lasers running it is that one that decides
+    // how much anatomical context there is - not the one you happen to be tuning.
+    var bgWl = wl;
+    var fb = focus && focus.beams ? focus.beams : null;
+    if (fb && fb.length > 1) {
+      bgWl = fb.reduce(function (m, b) { return b.pw > 0 ? Math.min(m, b.wl) : m; }, Infinity);
+      if (!isFinite(bgWl)) bgWl = wl;
+    }
     var bd = breakdown(sel);
     var plan = wl != null ? SV.optics.planChannels(
       bd.rows, state.channels,
       state.channels.map(function (c) { return filterCentre(c.spectrum) || 0; }),
-      wl) : null;
-    renderAcquire(plan, wl, bd, sel);
+      bgWl) : null;
+    renderAcquire(plan, bgWl, bd, sel);
 
     // advice
     var items = SV.explain({
@@ -680,27 +1000,17 @@
     writeHash();
   }
 
-  /* Candidate-shaped stats for an arbitrary wavelength. */
+  /* Candidate-shaped stats for an arbitrary wavelength of the active laser,
+   * with any other lasers left where the recommendation put them. Uses the
+   * recommender's own scorer so the two can never drift apart. */
   function evaluateAt(sel, wl, rec) {
-    var L = laser();
-    var pw = SV.optics.powerWeight(L, wl);
-    var cw = SV.optics.contextWeight(wl, state.ctxStrength);
-    var usable = sel.filter(function (s) { return s.twopCurve; });
-    // must use the same yardstick as the recommendation, or "better for X"
-    // comparisons end up mixing GM against % of own peak
-    var abs = !!(rec && rec.absolute);
-    var per = usable.map(function (s) {
-      var v = abs ? Math.max(0, s.gmCurve.at(wl)) / rec.gmScale : Math.max(0, s.twopCurve.at(wl));
-      return v * pw * cw;
-    });
-    var obj = state.objective === 'total'
-      ? per.reduce(function (a, b) { return a + b; }, 0) / (per.length || 1)
-      : (per.length ? Math.min.apply(null, per) : 0);
-    return {
-      wl: wl, obj: obj, per: per, power: L._curve.at(wl), ctx: cw,
-      mw: SV.optics.sampleMw(L, wl),
-      rel: rec && rec.best && rec.best.obj ? obj / rec.best.obj : 1,
-    };
+    if (!rec || !rec.evalVec) return null;
+    var base = (rec.best || rec.rawBest || {}).wls;
+    var wls = base ? base.slice() : [wl];
+    wls[rec.active] = wl;
+    var r = rec.evalVec(wls);
+    r.rel = rec.best && rec.best.obj ? r.obj / rec.best.obj : 1;
+    return r;
   }
 
   /* -- channels to acquire ----------------------------------------------- */
@@ -815,8 +1125,9 @@
       var f = fl[d.spectrum];
       if (f) out.push({ label: d.label, tag: f.modelled ? 'modelled' : (f.source || 'FPbase'), text: f.source || f.name, modelled: f.modelled });
     });
-    var L = laser();
-    out.push({ label: 'Laser', tag: 'nominal', text: L.name + ' — ' + L.note, modelled: true });
+    rigLasers().forEach(function (L) {
+      out.push({ label: 'Laser', tag: 'nominal', text: L.name + ' — ' + L.note, modelled: true });
+    });
     out.push({ label: 'Power model', tag: 'assumption', modelled: true,
       text: 'Wavelengths are judged on whether the laser\u2019s own output is enough, assuming ' +
         'typical losses between the laser and the sample. The tool does not know your rig\u2019s ' +
@@ -960,15 +1271,30 @@
 
   function compactState() {
     return {
-      s: state.scopeId, l: state.laserId,
+      s: state.scopeId, sn: state.scopeName, bl: state.blockerNm,
+      l: state.laserIds, lm: state.laserMode, la: laser().id,
       f: state.selected.map(function (x) { return x.id + (x.source ? ':' + x.source : ''); }),
       p: state.sourcePref, o: state.objective, c: state.ctxStrength, m: state.minWl,
       k: state.commonOnly ? 1 : 0, u: state.unitsLocked ? state.excUnits : null,
       w: state.chosenWl,
       ch: state.channels.map(function (c) {
-        return { n: c.name, s: c.spectrum, p: c.path };
+        var f = allFilters()[c.spectrum];
+        return { n: c.name, s: c.spectrum, f: f ? f.name : c.filter };
       }),
     };
+  }
+
+  /* A rig handed over in the URL, as BakingTray does: #cfg=<base64url JSON>.
+   * Same object as a config file, so it goes down the same path. */
+  function readConfigHash() {
+    var m = /[#&]cfg=([^&]+)/.exec(location.hash);
+    if (!m) return null;
+    try {
+      var json = decodeURIComponent(escape(atob(
+        m[1].replace(/-/g, '+').replace(/_/g, '/'))));
+      var cfg = JSON.parse(json);
+      return cfg && cfg.channels ? cfg : null;
+    } catch (e) { return null; }
   }
 
   var hashLock = false;
@@ -978,6 +1304,7 @@
       var enc = btoa(unescape(encodeURIComponent(JSON.stringify(compactState()))))
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       history.replaceState(null, '', '#v1=' + enc);
+      lsSet(LS_LAST, currentConfig());     // reopen on this rig next visit
     } catch (e) { /* URL state is a convenience; never break the page over it */ }
   }
 
@@ -987,8 +1314,16 @@
     try {
       var json = decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))));
       var o = JSON.parse(json);
+      // Start from the microscope the link names, so anything the link does not
+      // carry (lasers, blocker, channels) comes from that rig rather than from
+      // whatever happened to be loaded.
+      loadScope(scopeById(o.s || state.scopeId));
       if (o.s) state.scopeId = o.s;
-      if (o.l) state.laserId = o.l;
+      if (o.sn) state.scopeName = o.sn;
+      if (o.bl != null) state.blockerNm = o.bl;
+      if (o.l) state.laserIds = Array.isArray(o.l) ? o.l : [o.l];
+      if (o.lm) state.laserMode = o.lm;
+      if (o.la) state.activeLaserId = o.la;
       state.selected = (o.f || []).map(function (t) {
         var parts = t.split(':');
         return { id: parts[0], source: parts[1] || null };
@@ -1001,7 +1336,9 @@
       if (o.u) { state.excUnits = o.u; state.unitsLocked = true; }
       state.chosenWl = o.w != null ? o.w : null;
       if (o.ch && o.ch.length) {
-        state.channels = o.ch.map(function (c) { return { name: c.n, spectrum: c.s, path: c.p || [] }; });
+        state.channels = o.ch.map(function (c) {
+          return { name: c.n, spectrum: resolveChannelFilter({ spectrum: c.s, filter: c.f }), filter: c.f };
+        });
       }
       return true;
     } catch (e) { return false; }
@@ -1046,28 +1383,138 @@
     try { localStorage.setItem('sv-theme', pref); } catch (e) { /* private mode */ }
   }
 
+  /* ------------------------------------------------- import / export UI */
+
+  function renderScopeControls() {
+    var ss = $('scope-select');
+    if (ss.value !== state.scopeId ||
+        !Array.prototype.some.call(ss.options, function (o) { return o.value === state.scopeId; })) {
+      renderScopeOptions();
+    }
+    $('btn-forget-scope').hidden = !isSaved(state.scopeId);
+  }
+
+  function renderScopeOptions() {
+    var ss = $('scope-select');
+    ss.innerHTML = '';
+    var built = document.createElement('optgroup');
+    built.label = 'Built in';
+    CORE.scopes.forEach(function (sc) { built.appendChild(new Option(sc.name, sc.id)); });
+    ss.appendChild(built);
+    var mine = savedScopes();
+    if (mine.length) {
+      var grp = document.createElement('optgroup');
+      grp.label = 'Saved on this computer';
+      mine.forEach(function (sc) { grp.appendChild(new Option(sc.name, sc.id)); });
+      ss.appendChild(grp);
+    }
+    if (!scopeLibrary().some(function (sc) { return sc.id === state.scopeId; })) {
+      var cur = document.createElement('optgroup');
+      cur.label = 'Unsaved';
+      cur.appendChild(new Option(state.scopeName, state.scopeId));
+      ss.appendChild(cur);
+    }
+    ss.value = state.scopeId;
+  }
+
+  function slug(name) {
+    return (name || 'microscope').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'microscope';
+  }
+
+  function saveConfig() {
+    var name = window.prompt('Name for this microscope', state.scopeName || 'My microscope');
+    if (name == null) return;
+    name = name.trim();
+    if (!name) return;
+
+    state.scopeName = name;
+    state.scopeId = slug(name);
+    var cfg = currentConfig(name);
+
+    // keep it on this machine as well as handing over the file, so it is in the
+    // dropdown next time without having to load it again
+    rememberScope(cfg);
+    renderScopeOptions();
+
+    var blob = new Blob([JSON.stringify(cfg, null, 2) + '\n'], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = slug(name) + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Saved ' + a.download + ' and added it to the microscope list.');
+    renderAll();
+  }
+
+  function loadConfigFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var cfg;
+      try { cfg = JSON.parse(String(reader.result)); } catch (e) { cfg = null; }
+      if (!cfg || !cfg.channels) { toast('That does not look like a microscope config.'); return; }
+      adoptConfig(cfg, 'Loaded ' + (cfg.name || 'microscope') + '.');
+    };
+    reader.readAsText(file);
+  }
+
+  /* Shared by the file picker and the #cfg= handoff from BakingTray. */
+  function adoptConfig(cfg, message) {
+    if (!cfg.id) cfg.id = slug(cfg.name);
+    applyConfig(cfg);
+    rememberScope(currentConfig());
+    renderScopeOptions();
+    hydrateExternalFilters().then(function () {
+      effCache = {};
+      centreCache = {};
+      sortChannels();
+      renderAll();
+      if (message) toast(message);
+    });
+  }
+
   /* ---------------------------------------------------------------- init */
 
   function bindUI() {
     // scope + laser
     var ss = $('scope-select');
-    CORE.scopes.forEach(function (sc) {
-      ss.appendChild(new Option(sc.name, sc.id));
-    });
+    renderScopeOptions();
     ss.value = state.scopeId;
     ss.addEventListener('change', function () {
-      state.scopeId = ss.value;
-      loadScope(scope());
-      $('laser-select').value = state.laserId;
-      state.chosenWl = null;
+      loadScope(scopeById(ss.value));
       renderAll();
     });
 
-    var ls = $('laser-select');
-    CORE.lasers.forEach(function (l) { ls.appendChild(new Option(l.name, l.id)); });
-    ls.value = state.laserId;
-    ls.addEventListener('change', function () {
-      state.laserId = ls.value;
+    $('btn-save-config').addEventListener('click', saveConfig);
+    $('btn-forget-scope').addEventListener('click', function () {
+      if (!isSaved(state.scopeId)) return;
+      if (!window.confirm('Remove "' + state.scopeName + '" from this computer? ' +
+          'The config file you downloaded is not affected.')) return;
+      forgetScope(state.scopeId);
+      loadScope(CORE.scopes[0]);
+      renderScopeOptions();
+      renderAll();
+    });
+    $('btn-load-config').addEventListener('click', function () { $('config-file').click(); });
+    $('config-file').addEventListener('change', function (e) {
+      if (e.target.files && e.target.files[0]) loadConfigFile(e.target.files[0]);
+      e.target.value = '';
+    });
+
+    $('btn-add-laser').addEventListener('click', function () {
+      var taken = state.laserIds;
+      var next = CORE.lasers.filter(function (l) { return taken.indexOf(l.id) < 0; })[0];
+      if (!next) { toast('Every laser in the list is already fitted.'); return; }
+      state.laserIds.push(next.id);
+      if (state.laserIds.length === 2 && state.laserMode === 'single') {
+        // the point of adding a second laser is usually to use both
+        state.laserMode = 'simultaneous';
+      }
+      renderAll();
+    });
+
+    $('laser-mode').addEventListener('change', function (e) {
+      state.laserMode = e.target.value;
       state.chosenWl = null;
       renderAll();
     });
@@ -1150,9 +1597,11 @@
       });
     });
     $('btn-reset-scope').addEventListener('click', function () {
-      loadScope(scope());
+      var sc = scope();
+      loadScope(sc);
+      effCache = {};
       renderAll();
-      toast('Channels reset to ' + scope().name);
+      toast('Reset to ' + sc.name);
     });
 
     // picker
@@ -1248,11 +1697,27 @@
     try { stored = localStorage.getItem('sv-theme') || 'auto'; } catch (e) { /* private mode */ }
     applyTheme(stored);
 
-    loadScope(scope());
+    /* Where the rig comes from, in order of authority:
+     *   1. a #cfg= handoff (BakingTray opening the page with a rig on disk)
+     *   2. a #v1= share link
+     *   3. whatever was last in use on this machine
+     *   4. the first built-in
+     */
+    var handed = readConfigHash();
     hashLock = true;
-    var restored = readHash();
+    var restored = handed ? false : readHash();
     hashLock = false;
-    if (restored && state.scopeId !== scope().id) loadScope(scope());
+
+    if (handed) {
+      if (!handed.id) handed.id = slug(handed.name);
+      applyConfig(handed);
+      rememberScope(currentConfig());
+    } else if (restored) {
+      // readHash() has already loaded the microscope the link names
+    } else {
+      var last = lsGet(LS_LAST, null);
+      loadScope(last && last.channels ? last : CORE.scopes[0]);
+    }
 
     bindUI();
     makeCharts();
@@ -1262,6 +1727,7 @@
       // blue-to-red ordering can be settled - including for shared links,
       // which carry whatever order they were saved in
       centreCache = {};
+      effCache = {};
       sortChannels();
       renderAll();
     });

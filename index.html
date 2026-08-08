@@ -16,8 +16,8 @@
   <div class="brand">
     <span class="brand-mark" aria-hidden="true"></span>
     <span>
-      <strong>Two-photon spectra</strong>
-      <em>&amp; wavelength chooser</em>
+      <strong>BrainSaw</strong>
+      <em>excitation and emission tool</em>
     </span>
   </div>
 
@@ -26,10 +26,10 @@
       <span>Microscope</span>
       <select id="scope-select"></select>
     </label>
-    <label class="field">
-      <span>Laser</span>
-      <select id="laser-select"></select>
-    </label>
+    <button class="btn ghost" id="btn-forget-scope" title="Remove this microscope from the list on this computer" hidden>Forget</button>
+    <button class="btn ghost" id="btn-load-config" title="Load a microscope config file">Load config</button>
+    <button class="btn ghost" id="btn-save-config" title="Save this microscope as a config file">Save config</button>
+    <input type="file" id="config-file" accept=".json,application/json" hidden>
     <button class="btn ghost" id="btn-share" title="Copy a link that restores this exact setup">Share</button>
     <button class="btn ghost icon" id="btn-theme" title="Switch light / dark" aria-label="Switch light / dark">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3v2m0 14v2m9-9h-2M5 12H3m14.5-6.5-1.4 1.4M7.9 16.1l-1.4 1.4m11 0-1.4-1.4M7.9 7.9 6.5 6.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
@@ -93,6 +93,28 @@
     </section>
 
     <section class="rail-block">
+      <h2>Lasers</h2>
+      <ul class="channel-list" id="laser-list"></ul>
+      <div class="row-actions">
+        <button class="btn small" id="btn-add-laser">Add laser</button>
+      </div>
+      <label class="field block" id="laser-mode-wrap" hidden>
+        <span>With more than one laser</span>
+        <select id="laser-mode">
+          <option value="single">One at a time</option>
+          <option value="simultaneous">All on together</option>
+          <option value="sequential">One pass per laser</option>
+        </select>
+      </label>
+      <p class="rail-note" id="laser-mode-note"></p>
+      <p class="rail-warning" id="laser-mode-warning" hidden>
+        No BrainSaw can do this yet — imaging the same sections twice with different
+        lasers is not something the hardware supports. It is here so you can see what
+        it would be worth.
+      </p>
+    </section>
+
+    <section class="rail-block">
       <h2>Recommender settings</h2>
       <label class="field block">
         <span>Objective</span>
@@ -138,11 +160,12 @@
           <p class="hero-kicker">Suggested excitation wavelength</p>
           <p class="hero-number"><span id="hero-wl">—</span><span class="unit">nm</span></p>
           <p class="hero-sub" id="hero-sub"></p>
+          <div class="hero-beams" id="hero-beams"></div>
         </div>
         <div class="hero-bars" id="hero-bars"></div>
       </div>
       <div class="hero-alts-row" id="hero-alts-row" hidden>
-        <span class="hero-alts-label">Try instead</span>
+        <span class="hero-alts-label">Alternatives</span>
         <div class="hero-alts" id="hero-alts"></div>
       </div>
       <ul class="advice" id="advice"></ul>

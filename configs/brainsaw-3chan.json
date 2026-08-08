@@ -1,0 +1,15 @@
+{
+  "schema": "swc-channel-chooser/microscope",
+  "version": 1,
+  "id": "brainsaw-3chan",
+  "order": 2,
+  "name": "BrainSaw 3 chan",
+  "notes": "Three-channel BrainSaw. The red channel is a long-pass, so its upper edge is set by the 700 nm laser blocking filter rather than by the filter itself.",
+  "blockerNm": 700,
+  "lasers": ["maitai-ehp-ds"],
+  "channels": [
+    {"name": "Blue", "filter": "Semrock FF01-450/70"},
+    {"name": "Green", "filter": "Chroma ET525/50m"},
+    {"name": "Red", "filter": "Chroma ET570lp"}
+  ]
+}

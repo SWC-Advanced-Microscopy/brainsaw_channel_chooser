@@ -29,9 +29,10 @@ GUI started: given a set of fluorophores, tell the user what wavelength to use.
 - **Channel assignment** — how each fluorophore splits across the channels, and
   what fraction of its emission is captured at all. Channels read blue to far red
   everywhere on the page, matching the emission chart.
-- **Configurable hardware** — BrainSaw 1 loads by default; any channel can be
-  swapped for any of ~4,000 filters from the FPbase library, and the whole setup
-  is encoded in the URL so it can be shared.
+- **Configurable hardware** — two BrainSaws ship built in; any channel can be
+  swapped for any of ~4,000 filters from the FPbase library, lasers are added and
+  removed in the rail, and the whole setup is encoded in the URL so it can be
+  shared. Rigs can be saved to a file and loaded back.
 
 ## Running it
 
@@ -47,6 +48,64 @@ variants via plain `<script>` tags, so **it works straight off the filesystem** 
 unlike the previous viewer. The only feature that needs an HTTP server is the
 on-demand filter library (`data/filter-library/*.json`), which is fetched lazily when
 you open the filter picker.
+
+## Microscopes
+
+Two are built in — **BrainSaw 4 chan** and **BrainSaw 3 chan** — and they are
+authored as plain JSON in `configs/`, which the build vendors into
+`data/microscopes.json`. A user's own rig is the same kind of object, so there is
+one code path for all of them:
+
+```json
+{
+  "schema": "swc-channel-chooser/microscope",
+  "version": 1,
+  "name": "BrainSaw 4 chan",
+  "blockerNm": 700,
+  "lasers": ["maitai-ehp-ds"],
+  "channels": [
+    {"name": "Blue", "filter": "Semrock FF01-460/60"},
+    {"name": "Green", "filter": "Semrock FF01-525/39"}
+  ]
+}
+```
+
+Filters are named, not just numbered: a name survives a rebuild of the library
+and is what a person reading the file understands. The `spectrum` id is written
+alongside as a fast path and is optional.
+
+**Hardware only.** How you choose to work — the objective, the >950 nm penalty,
+which fluorophores you picked, whether the lasers run together — is not part of
+the rig and is not saved into a config.
+
+- **Save config** prompts for a name, downloads `<name>.json`, and adds the rig to
+  the microscope dropdown.
+- **Load config** reads such a file back. Imported rigs also join the dropdown and
+  persist in `localStorage` (not cookies: nothing is sent anywhere, so no consent
+  banner is needed), with a **Forget** button to remove one. The rig you were last
+  using reopens next visit.
+
+### Every channel is cut off by the laser blocker
+
+Rigs put a blocking filter in front of the detectors to keep scattered laser
+light out, assumed to sit at 700 nm unless a config says otherwise. It is what
+sets the upper edge of a long-pass emission filter: BrainSaw 3 chan's red channel
+is an ET570lp, so its band is 570 nm to the blocker, not 570 nm to infinity. The
+charts and the detection maths both use the cut-off curve.
+
+### Opening the page on a particular rig
+
+A config can be handed over in the URL fragment, which is how BakingTray will do
+it:
+
+```
+https://…/channel-chooser/#cfg=<base64url of the config JSON>
+```
+
+The fragment is never sent to the server, so the rig stays on the machine. The
+page loads that microscope and remembers it. `matlab/channelChooserURL.m` is a
+reference implementation of the encoding side — point it at a config file in the
+BakingTray `SETTINGS` directory and it opens the browser on that rig.
 
 ## Deploying
 
@@ -206,6 +265,28 @@ and 1010 nm on a Mai Tai, which runs out of power past that, eGFP + tdTomato →
 Fixed-line lasers are pinned to their one wavelength, so the page reports how
 well the selection is excited rather than pretending to choose.
 
+### More than one laser
+
+A rig can have several lasers, listed in the rail. What that means is a choice,
+because it changes the maths:
+
+| Mode | What it models |
+|---|---|
+| **One at a time** | Only the selected laser is on. |
+| **All on together** | Every beam on at once, so each fluorophore collects excitation from all of them and the contributions add. |
+| **One pass per laser** | Image once with each laser and merge, so every fluorophore gets whichever beam suits it — what counts is its best single pass. |
+
+The last of those **cannot be done on a BrainSaw today** and says so in red. It is
+selectable because it is worth knowing what it would buy: a Mai Tai at 920 nm plus
+an Axon at 1064 nm gives eGFP and tdTomato each close to their own peak, which no
+single wavelength can.
+
+The >950 nm context penalty is applied once, from the **shortest** wavelength in
+use, not per beam — the background that gives you anatomy comes from the bluest
+beam on the sample, and one such beam is enough. Power is judged per beam and
+independently: two beams do not share a budget, because what matters is whether
+each laser has enough output at its own wavelength.
+
 ### Which channels to acquire
 
 Every detectable fluorophore claims its best channel for signal. Of whatever is
@@ -235,6 +316,8 @@ js/curves.js        curve unpacking, interpolation, integration, wavelength colo
 js/chart.js         the canvas chart engine
 js/optics.js        detection model, recommender, channel planner
 js/advice.js        turns the model's numbers into sentences
+configs/            built-in microscopes, vendored into data/ by the build
+matlab/             reference MATLAB for the BakingTray handoff
 claude/             the brief this was built from
 js/app.js           state, UI wiring, URL sharing
 build/fetch_data.py regenerates data/

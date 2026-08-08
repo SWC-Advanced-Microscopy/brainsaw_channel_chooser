@@ -60,8 +60,10 @@
 
   /* ------------------------------------------------------ optical path */
 
-  /* A channel's throughput is its bandpass transmission. */
+  /* A channel's throughput: its emission filter, already cut off at the laser
+   * blocking filter by the page (channel._curve) if that has been worked out. */
   function channelThroughput(channel, filters) {
+    if (channel._curve) return channel._curve;
     var bp = filters[channel.spectrum];
     return bp && bp._curve ? bp._curve : null;
   }
@@ -232,23 +234,81 @@
     return 0;
   }
 
-  /* Score curve + ranked round-number candidates.
+  /* Wavelengths a laser can actually be asked for: its tuning range clipped to
+   * the user's floor, on a `step` grid. A fixed-line laser offers its one line. */
+  function laserGrid(laser, minWl, step) {
+    var lo = Math.max(minWl, Math.ceil(laser.range[0]));
+    var hi = Math.floor(laser.range[1]);
+    if (hi < lo) return [];                       // cannot reach anything usable
+    if (laser.tunable === false || hi === lo) return [Math.round((lo + hi) / 2)];
+    var out = [];
+    for (var w = Math.ceil(lo / step) * step; w <= hi; w += step) out.push(w);
+    if (!out.length) out.push(Math.round((lo + hi) / 2));
+    return out;
+  }
+
+  var MAX_COMBOS = 50000;
+
+  function combos(grids) {
+    var out = [[]];
+    for (var i = 0; i < grids.length; i++) {
+      var next = [];
+      for (var a = 0; a < out.length; a++) {
+        for (var b = 0; b < grids[i].length; b++) {
+          next.push(out[a].concat([grids[i][b]]));
+          if (next.length > MAX_COMBOS) return next;
+        }
+      }
+      out = next;
+    }
+    return out;
+  }
+
+  /* Score curve + ranked candidates.
    *
-   * `selection` is [{fluor, weight, source}], `laser` the active laser record.
+   * `selection` is [{fluor, weight, source, gmCurve}], `lasers` the laser records
+   * that are switched on (a single record is accepted too).
+   *
+   * `opts.combine` says what having more than one laser means:
+   *
+   *   'single'        one laser, the way most rigs work.
+   *   'simultaneous'  every beam on at once, so a fluorophore collects excitation
+   *                   from all of them and the contributions add.
+   *   'sequential'    one pass per laser, each fluorophore imaged in whichever
+   *                   pass suits it, so what counts is the best single pass.
+   *
+   * The >950 nm context penalty is applied once, from the SHORTEST wavelength in
+   * use, not per beam: the background that gives you anatomy comes from the
+   * bluest beam on the sample, and one such beam is enough.
    */
-  function recommend(selection, laser, opts) {
+  function recommend(selection, lasers, opts) {
     opts = opts || {};
-    var mode = opts.mode || 'balanced';          // 'balanced' | 'total'
+    if (!lasers) lasers = [];
+    if (!Array.isArray(lasers)) lasers = [lasers];
+    lasers = lasers.filter(Boolean);
+    if (!lasers.length) return null;
+
+    var mode = opts.mode || 'balanced';               // 'balanced' | 'total'
+    var combine = opts.combine || 'single';
     var ctxStrength = opts.contextStrength == null ? 1 : opts.contextStrength;
     var minWl = opts.minWl == null ? DEFAULT_MIN_WL : opts.minWl;
-    var range = laser ? laser.range : [700, 1100];
-    var laserCurve = laser ? laser._curve : null;
-
-    var lo = Math.max(minWl, Math.floor(range[0]));
-    var hi = Math.min(1320, Math.ceil(range[1]));
 
     var usable = selection.filter(function (s) { return s.twopCurve; });
-    if (!usable.length || hi < lo) return null;   // hi === lo for a fixed-line laser
+    if (!usable.length) return null;
+
+    // the laser the marker drags and the headline number belongs to
+    var active = 0;
+    if (opts.activeId != null) {
+      lasers.forEach(function (l, i) { if (l.id === opts.activeId) active = i; });
+    } else {
+      for (var t = 0; t < lasers.length; t++) {
+        if (lasers[t].tunable !== false) { active = t; break; }
+      }
+    }
+    var aL = lasers[active];
+    var lo = Math.max(minWl, Math.floor(aL.range[0]));
+    var hi = Math.min(1320, Math.ceil(aL.range[1]));
+    if (hi < lo) return null;
 
     /* Compare fluorophores in ABSOLUTE cross-section (GM) whenever every one of
      * them has it, exactly as the chart switches its own units.
@@ -267,7 +327,7 @@
     var gmScale = 1;
     if (absolute) {
       gmScale = usable.reduce(function (m, s) {
-        return Math.max(m, s.gmCurve.peak(lo, hi).y);
+        return Math.max(m, s.gmCurve.peak(700, 1320).y);
       }, 0) || 1;
     }
     var sigma = function (s, wl) {
@@ -276,12 +336,31 @@
         : Math.max(0, s.twopCurve.at(wl));
     };
 
-    var scoreAt = function (wl) {
-      var pw = powerWeight(laser, wl);
-      var cw = contextWeight(wl, ctxStrength);
+    /* One wavelength vector, one row of numbers. */
+    function evalVec(wls) {
+      var pw = [], ctxWl = Infinity;
+      for (var i = 0; i < lasers.length; i++) {
+        var w = powerWeight(lasers[i], wls[i]);
+        pw.push(w);
+        if (w > 0 && wls[i] < ctxWl) ctxWl = wls[i];
+      }
+      var cw = contextWeight(isFinite(ctxWl) ? ctxWl : CTX_FULL, ctxStrength);
+
+      var from = [];                       // sequential: which pass each fluor uses
       var per = usable.map(function (s) {
-        return sigma(s, wl) * pw * cw;
+        var v = 0, pick = 0;
+        for (var i = 0; i < lasers.length; i++) {
+          var term = sigma(s, wls[i]) * pw[i];
+          if (combine === 'sequential') {
+            if (term > v) { v = term; pick = i; }
+          } else {
+            v += term;
+          }
+        }
+        from.push(pick);
+        return v * cw;
       });
+
       var obj;
       if (mode === 'total') {
         var wsum = 0, tot = 0;
@@ -290,54 +369,61 @@
       } else {
         obj = Math.min.apply(null, per);
       }
+      var tot = per.reduce(function (a, b) { return a + b; }, 0);
       return {
-        obj: obj, per: per, ctx: cw,
-        power: laserCurve ? laserCurve.at(wl) : 1,   // fraction of the laser's peak
-        mw: sampleMw(laser, wl),                     // mW at the sample, or null
+        wls: wls, wl: wls[active], obj: obj, tot: tot, per: per, ctx: cw, from: from,
+        power: aL._curve ? aL._curve.at(wls[active]) : 1,
+        mw: sampleMw(aL, wls[active]),
+        beams: lasers.map(function (l, i) {
+          return { laser: l, wl: wls[i], pw: pw[i], mw: sampleMw(l, wls[i]) };
+        }),
       };
-    };
+    }
 
-    // full 1 nm score curve, for plotting and for finding the raw optimum
-    var curveYs = [], best = { obj: -1, wl: null };
+    /* --- the raw optimum, over every combination on a 2 nm grid ---------- */
+    var fine = combos(lasers.map(function (l) { return laserGrid(l, minWl, 2); }));
+    var best = null;
+    fine.forEach(function (v) {
+      var r = evalVec(v);
+      // ties on the worst case are broken by total signal: if eGFP is the
+      // limiting fluorophore either way, take the option that also gives
+      // tdTomato more rather than the first one found
+      if (!best || r.obj > best.obj * 1.0001 ||
+          (r.obj > best.obj * 0.9999 && r.tot > best.tot)) best = r;
+    });
+    if (!best || best.obj <= 0) {
+      return {
+        scoreCurve: null, best: null, candidates: [], allCandidates: [],
+        usable: usable, range: [lo, hi], minWl: minWl, lasers: lasers,
+        active: active, combine: combine, absolute: absolute, gmScale: gmScale,
+      };
+    }
+
+    /* --- 1 nm sweep of the active laser, others held at the optimum ------ */
+    var curveYs = [];
     for (var wl = lo; wl <= hi; wl++) {
-      var s = scoreAt(wl);
-      curveYs.push(round4(s.obj));
-      if (s.obj > best.obj) { best = { obj: s.obj, wl: wl }; }
+      var v2 = best.wls.slice();
+      v2[active] = wl;
+      curveYs.push(round4(evalVec(v2).obj));
     }
     var scoreCurve = new SV.Curve({ x0: lo, dx: 1, y: curveYs });
 
-    if (best.wl == null || best.obj <= 0) {
-      return {
-        scoreCurve: scoreCurve, best: null, candidates: [], allCandidates: [],
-        usable: usable, range: [lo, hi], minWl: minWl,
-      };
-    }
-
-    // Round candidates: every 10 nm in range, scored, then ranked by score with
-    // a nudge towards rounder numbers so 920 wins over 930 when they tie.
+    /* --- round-number candidates ----------------------------------------- */
     var cands = [];
-    for (var c = Math.ceil(lo / 10) * 10; c <= hi; c += 10) {
-      var sc = scoreAt(c);
-      if (sc.obj <= 0) continue;
-      cands.push({
-        wl: c, obj: sc.obj, per: sc.per, power: sc.power, mw: sc.mw, ctx: sc.ctx,
-        rel: sc.obj / best.obj,
-        nice: niceness(c),
-      });
-    }
-    /* A single-line laser (an Axon) has no round wavelength inside its range,
-     * so fall back to its one wavelength rather than returning nothing. */
-    if (!cands.length) {
-      var only = scoreAt(best.wl);
-      cands.push({
-        wl: best.wl, obj: only.obj, per: only.per, power: only.power, mw: only.mw,
-        ctx: only.ctx, rel: 1, nice: niceness(best.wl),
-      });
-    }
+    combos(lasers.map(function (l) { return laserGrid(l, minWl, 10); })).forEach(function (v) {
+      var r = evalVec(v);
+      if (r.obj <= 0) return;
+      r.rel = r.obj / best.obj;
+      r.nice = lasers.reduce(function (n, l, i) {
+        return n + (l.tunable === false ? 0 : niceness(v[i]));
+      }, 0);
+      cands.push(r);
+    });
+    if (!cands.length) cands.push(Object.assign(evalVec(best.wls), { rel: 1, nice: 0 }));
 
     cands.sort(function (a, b) {
       // within 2% treat as equivalent and prefer the conventional / rounder one
-      if (Math.abs(a.rel - b.rel) < 0.02) return b.nice - a.nice || b.obj - a.obj;
+      if (Math.abs(a.rel - b.rel) < 0.02) return b.nice - a.nice || b.tot - a.tot || b.obj - a.obj;
       return b.obj - a.obj;
     });
 
@@ -345,11 +431,10 @@
 
     /* Alternatives have to be genuine trade-offs, not just worse.
      *
-     * An alternative is only offered if it beats the recommendation for at least
-     * one selected fluorophore. Proposing 890 nm alongside 920 nm for eGFP +
-     * tdTomato is nonsense - it is worse for both, i.e. strictly dominated, and
-     * simply part-way down the same flank. 950 nm is worse for eGFP but better
-     * for tdTomato, so it is a real choice and is worth showing.
+     * An alternative is only offered if it beats everything already on offer for
+     * at least one selected fluorophore. Proposing 890 nm alongside 920 nm for
+     * eGFP + tdTomato is nonsense - it is worse for both, i.e. strictly
+     * dominated, and simply part-way down the same flank.
      *
      * With a single fluorophore nothing can beat the optimum for it, so there are
      * correctly no alternatives at all.
@@ -363,9 +448,6 @@
       if (picks.length >= 4) return;
       if (c.obj < 0.4 * top.obj) return;   // not a real option, just a local bump
       if (picks.some(function (p) { return Math.abs(p.wl - c.wl) < 20; })) return;
-      // must be non-dominated by everything already offered, not just by the
-      // top pick - otherwise 890 nm rides in behind 920 nm, which it loses to
-      // for every fluorophore
       if (!picks.every(function (p) { return beats(c, p); })) return;
       picks.push(c);
     });
@@ -377,11 +459,15 @@
       candidates: picks,
       allCandidates: cands,
       usable: usable,
+      lasers: lasers,
+      active: active,
+      combine: combine,
       range: [lo, hi],
       minWl: minWl,
       mode: mode,
       absolute: absolute,   // scored in GM rather than "% of own peak"
       gmScale: gmScale,
+      evalVec: evalVec,     // so the page can score a dragged marker the same way
     };
   }
 
@@ -396,6 +482,7 @@
     bgLabel: bgLabel,
     planChannels: planChannels,
     powerWeight: powerWeight,
+    laserGrid: laserGrid,
     sampleMw: sampleMw,
     contextWeight: contextWeight,
     recommend: recommend,

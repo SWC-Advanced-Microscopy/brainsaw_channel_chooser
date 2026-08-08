@@ -40,7 +40,17 @@
      * Judged in absolute terms, not as a fraction of peak: what matters is
      * whether ~100 mW still reaches the sample. A laser well down its tuning
      * curve but still putting out a watt is not worth mentioning. */
-    var mw = best.mw;
+    /* With more than one beam, warn about whichever ones are actually short of
+     * output - not about the one that happens to be under the marker. */
+    if (best.beams && best.beams.length > 1) {
+      best.beams.filter(function (b) { return b.pw > 0 && b.pw < 0.5; }).forEach(function (b) {
+        items.push({ kind: 'warn', text:
+          'The ' + b.laser.name + ' is short of output at ' + b.wl + ' nm, so that beam ' +
+          'is the one that will limit you.' });
+      });
+    }
+
+    var mw = best.beams && best.beams.length > 1 ? null : best.mw;
     if (mw != null) {
       /* Deliberately says nothing about milliwatts at the sample. What reaches
        * the sample depends on the rig's throughput, which this tool has no way
@@ -78,7 +88,7 @@
         .sort(function (a, b) { return b.obj - a.obj; })[0];
       // skip if it is already going to be listed as an alternative below
       var listed = rec.candidates.some(function (c) { return lower && c.wl === lower.wl; });
-      if (lower && lower.obj > 0 && !listed && laser.tunable !== false) {
+      if (lower && lower.obj > 0 && !listed && anyTunable) {
         // the user can drag the marker anywhere, so "the alternative" is not
         // necessarily worse than where they are standing
         items.push({ kind: 'info', text: lower.obj > best.obj * 1.02
@@ -92,7 +102,8 @@
 
     /* --- fixed-line lasers -------------------------------------------------
      * Nothing to choose, so say what you have got rather than pretending. */
-    if (laser.tunable === false) {
+    var anyTunable = (rec.lasers || [laser]).some(function (l) { return l.tunable !== false; });
+    if (!anyTunable) {
       items.push({ kind: 'info', text:
         'The ' + laser.name + ' is a single-line source, so ' + best.wl + ' nm is not a ' +
         'recommendation — it is the only wavelength you have. The chart shows how well ' +
@@ -100,7 +111,7 @@
     }
 
     /* --- alternatives ------------------------------------------------------ */
-    (laser.tunable === false ? [] : rec.candidates).filter(function (c) {
+    (anyTunable ? rec.candidates : []).filter(function (c) {
       return c.wl !== best.wl;
     }).slice(0, 2).forEach(function (c, altIndex) {
       var better = [], worse = [];
@@ -125,7 +136,7 @@
     });
 
     /* --- convention vs the measured optimum -------------------------------- */
-    if (usable.length === 1 && laser.tunable !== false) {
+    if (usable.length === 1 && anyTunable && (rec.lasers || []).length < 2) {
       var conv = CONVENTIONAL[usable[0].fluor.id];
       if (conv && Math.abs(conv.wl - best.wl) > 20) {
         var inRange = conv.wl >= Math.max(laser.range[0], rec.minWl) && conv.wl <= laser.range[1];

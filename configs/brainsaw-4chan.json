@@ -1,0 +1,16 @@
+{
+  "schema": "swc-channel-chooser/microscope",
+  "version": 1,
+  "id": "brainsaw-4chan",
+  "order": 1,
+  "name": "BrainSaw 4 chan",
+  "notes": "Four-channel BrainSaw. Filters as fitted to SWC BrainSaw 1.",
+  "blockerNm": 700,
+  "lasers": ["maitai-ehp-ds"],
+  "channels": [
+    {"name": "Blue", "filter": "Semrock FF01-460/60"},
+    {"name": "Green", "filter": "Semrock FF01-525/39"},
+    {"name": "Red", "filter": "Chroma ET605/70m"},
+    {"name": "Far red", "filter": "Semrock FF01-676/29"}
+  ]
+}

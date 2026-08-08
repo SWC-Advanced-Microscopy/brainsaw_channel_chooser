@@ -1,18 +1,39 @@
 window.SV_MICROSCOPES = {
   "generated": "2026-08-08",
-  "note": "Built-in microscope configurations.",
+  "note": "Built-in microscope configurations, vendored from configs/*.json. Edit those files, not this one.",
   "microscopes": [
     {
-      "id": "brainsaw-1",
-      "name": "BrainSaw 1",
-      "notes": "SWC BrainSaw 1. MaiTai eHP DS, Nikon 16x NA 0.8, 8 kHz resonant scanner.",
-      "laser": "maitai-ehp-ds",
+      "schema": "swc-channel-chooser/microscope",
+      "version": 1,
+      "id": "brainsaw-4chan",
+      "order": 1,
+      "name": "BrainSaw 4 chan",
+      "notes": "Four-channel BrainSaw. Filters as fitted to SWC BrainSaw 1.",
+      "blockerNm": 700,
+      "lasers": ["maitai-ehp-ds"],
       "channels": [
-        {"n": 1, "name": "Far red", "fpbase": "Semrock FF01-676/29", "label": "Brightline 676/29", "pmt": "AFK5930", "spectrum": "1043"},
-        {"n": 2, "name": "Red", "fpbase": "Chroma ET605/70m", "label": "Chroma 605/70m", "pmt": "AFK5929", "spectrum": "351"},
-        {"n": 3, "name": "Green", "fpbase": "Semrock FF01-525/39", "label": "Brightline 525/39", "pmt": "AFK6125", "spectrum": "903"},
-        {"n": 4, "name": "Blue", "fpbase": "Semrock FF01-460/60", "label": "Brightline basic 460/60", "pmt": "AFK6121", "spectrum": "838"}
-      ]
+        {"name": "Blue", "filter": "Semrock FF01-460/60", "spectrum": "838"},
+        {"name": "Green", "filter": "Semrock FF01-525/39", "spectrum": "903"},
+        {"name": "Red", "filter": "Chroma ET605/70m", "spectrum": "351"},
+        {"name": "Far red", "filter": "Semrock FF01-676/29", "spectrum": "1043"}
+      ],
+      "source": "brainsaw-4chan.json"
+    },
+    {
+      "schema": "swc-channel-chooser/microscope",
+      "version": 1,
+      "id": "brainsaw-3chan",
+      "order": 2,
+      "name": "BrainSaw 3 chan",
+      "notes": "Three-channel BrainSaw. The red channel is a long-pass, so its upper edge is set by the 700 nm laser blocking filter rather than by the filter itself.",
+      "blockerNm": 700,
+      "lasers": ["maitai-ehp-ds"],
+      "channels": [
+        {"name": "Blue", "filter": "Semrock FF01-450/70", "spectrum": "820"},
+        {"name": "Green", "filter": "Chroma ET525/50m", "spectrum": "360"},
+        {"name": "Red", "filter": "Chroma ET570lp", "spectrum": "487"}
+      ],
+      "source": "brainsaw-3chan.json"
     }
   ]
 };

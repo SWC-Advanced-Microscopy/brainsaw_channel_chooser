@@ -240,22 +240,32 @@ ONE_PHOTON_ONLY = [
 # them (FF635-Di01, DMSP490R) are deliberately left out: they only trim the edges
 # of bands the bandpass filters already define, and one of them has no
 # machine-readable data anyway.
-BRAINSAW = {
-    "id": "brainsaw-1",
-    "name": "BrainSaw 1",
-    "notes": "SWC BrainSaw 1. MaiTai eHP DS, Nikon 16x NA 0.8, 8 kHz resonant scanner.",
-    "laser": "maitai-ehp-ds",
-    "channels": [
-        {"n": 1, "name": "Far red", "fpbase": "Semrock FF01-676/29",
-         "label": "Brightline 676/29", "pmt": "AFK5930"},
-        {"n": 2, "name": "Red", "fpbase": "Chroma ET605/70m",
-         "label": "Chroma 605/70m", "pmt": "AFK5929"},
-        {"n": 3, "name": "Green", "fpbase": "Semrock FF01-525/39",
-         "label": "Brightline 525/39", "pmt": "AFK6125"},
-        {"n": 4, "name": "Blue", "fpbase": "Semrock FF01-460/60",
-         "label": "Brightline basic 460/60", "pmt": "AFK6121"},
-    ],
-}
+# Built-in microscopes are authored as JSON in configs/, so the files a user
+# imports and the ones shipped with the tool are the same kind of object. The
+# build resolves each channel's filter name to an FPbase spectrum and vendors
+# the result into data/microscopes.json.
+CONFIG_DIR = os.path.normpath(os.path.join(HERE, "..", "configs"))
+
+# Every rig has a filter in front of the detectors to keep scattered laser light
+# out. Assumed to sit at 700 nm unless a config says otherwise, and it is what
+# sets the upper edge of any long-pass emission filter.
+DEFAULT_BLOCKER_NM = 700
+
+
+def load_configs():
+    out = []
+    for fname in sorted(os.listdir(CONFIG_DIR)):
+        if not fname.endswith(".json"):
+            continue
+        with open(os.path.join(CONFIG_DIR, fname)) as fh:
+            cfg = json.load(fh)
+        cfg.setdefault("blockerNm", DEFAULT_BLOCKER_NM)
+        cfg["source"] = fname
+        out.append(cfg)
+    if not out:
+        raise SystemExit(f"no microscope configs found in {CONFIG_DIR}")
+    out.sort(key=lambda c: (c.get("order", 99), c.get("name", "")))
+    return out
 
 
 # ------------------------------------------------------------------------ lasers
@@ -562,20 +572,23 @@ def build():
     n_common = sum(1 for f in fluorophores if f.get("common"))
     print(f"  -> {len(fluorophores)} fluorophores ({n_common} common)")
 
-    # ---- BrainSaw hardware ------------------------------------------------
+    # ---- microscope configs -----------------------------------------------
+    configs = load_configs()
     hw_ids = []
-    for ch in BRAINSAW["channels"]:
-        sid = lookup_filter(by_name, ch["fpbase"])
-        ch["spectrum"] = sid
-        hw_ids.append(sid)
-
-    print("fetching BrainSaw filter curves ...")
-    hw_raw = fetch_spectra(hw_ids)
+    for cfg in configs:
+        for ch in cfg["channels"]:
+            sid = lookup_filter(by_name, ch["filter"])
+            ch["spectrum"] = sid
+            hw_ids.append(sid)
+    print(f"fetching filter curves for {len(configs)} microscope configs ...")
+    hw_raw = fetch_spectra(sorted(set(hw_ids)))
 
     filters = {}
-    for ch in BRAINSAW["channels"]:
-        filters[ch["spectrum"]] = filt_record(ch["spectrum"], ch["fpbase"], "BP",
-                                              hw_raw[ch["spectrum"]])
+    for cfg in configs:
+        for ch in cfg["channels"]:
+            sid = ch["spectrum"]
+            if sid not in filters:
+                filters[sid] = filt_record(sid, ch["filter"], "BP", hw_raw[sid])
 
     core = {
         "generated": time.strftime("%Y-%m-%d"),
@@ -584,7 +597,7 @@ def build():
         "fluorophores": fluorophores,
         "filters": filters,
         "lasers": [laser_record(l) for l in LASERS],
-        "scopes": [BRAINSAW],
+        "scopes": configs,
         "sources": {
             "F": {"label": "FPbase", "units": "relative",
                   "url": "https://www.fpbase.org",
@@ -622,7 +635,8 @@ def build():
     }, "SV_BUNDLED_FILTERS")
     write(os.path.join(OUT, "microscopes.json"), {
         "generated": stamp,
-        "note": "Built-in microscope configurations.",
+        "note": "Built-in microscope configurations, vendored from configs/*.json. "
+                "Edit those files, not this one.",
         "microscopes": core["scopes"],
     }, "SV_MICROSCOPES")
 

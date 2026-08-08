@@ -318,4 +318,75 @@ Sensible location for the import and export buttons is at the top near the micro
 I want to be able to set the config then download it. Then add it as a file to the BakingTray SETTINGS directory. BakingTray will (I will do not you) have a button or menu item to "go to channel chooser site". Upon doing that it uploads (I don't know how. Serialised via URL?) automatically the settings from disk so the user is automagically presented with THEIR scope on the site. 
 
 ## Multiple lasers
-It is possible (although not common) for a rig to have multiple laser lines. So we need a way to handle this. Presently the laser is a drop-down up at the top. It can't stay there. 1. It can't be a drop-down if we want to be able to select multiple lasers. 2. It will get busy with the extra buttons for import and export. I think it just has to go below "detection channels" on the left hand bar. No other obvious choice.  
+It is possible (although not common) for a rig to have multiple laser lines. So we need a way to handle this. Presently the laser is a drop-down up at the top. It can't stay there. 1. It can't be a drop-down if we want to be able to select multiple lasers. 2. It will get busy with the extra buttons for import and export. I think it just has to go below "detection channels" on the left hand bar. No other obvious choice.
+
+---
+
+## What the next phase asked for, and what it became
+
+### Readable data files
+
+`core.json` held everything and `filters/000.json` said nothing about its
+contents. Split into files named after what is in them — `fluorophores`,
+`lasers`, `bundled-filters`, `microscopes`, `filter-library-index`, and library
+shards called `filters-0001-0120.json` — and pretty-printed with **one spectrum
+per line**: structure indented, but anything purely numeric kept on a single line
+so a 4000-sample curve does not run for 4000 lines.
+
+### Microscopes are config files
+
+`configs/*.json` are the source of truth for the two built-in BrainSaws, vendored
+into `data/microscopes.json` by the build. A user's saved rig is the same object,
+so import, export, the built-ins and the URL handoff all share one code path.
+**Hardware only**, as decided: channels, filters, blocker, lasers. Not the
+objective, not the penalty, not the fluorophores.
+
+Persistence is `localStorage` — not a cookie, nothing leaves the machine, no
+consent banner. Imported and saved rigs join the microscope dropdown and can be
+forgotten again; the last rig used reopens next visit.
+
+### The laser blocking filter
+
+Assumed at 700 nm on every rig, and a field in the config so a different one is
+not a code change. It is what closes the top of a long-pass emission filter —
+BrainSaw 3 chan's ET570lp is a 570 nm to 700 nm band, not 570 to infinity — and
+it applies to the charts and the detection maths alike.
+
+### Multiple lasers
+
+Moved out of the topbar, which now carries the config buttons, and into the rail
+below Detection channels. Three modes, since the brief asked for all three:
+
+1. **One at a time** — one laser on, scored as before.
+2. **All on together** — beams add, so a fluorophore is excited by all of them.
+3. **One pass per laser** — each fluorophore takes its best single pass.
+
+A fixed-line laser is never offered a "Tune" button, and the marker over it is
+not draggable: it has exactly one wavelength.
+
+Modes 2 and 3 are the same search with a different combiner (sum against max),
+over the cartesian product of each laser's candidate wavelengths. Mode 3 carries
+a red warning that no BrainSaw can do it yet, but it is offered as a real choice
+when optimising, because it is worth knowing what it would be worth.
+
+Two things follow from the brief and are worth keeping straight:
+
+- **Power is judged per beam, never as a shared budget.** The question is only
+  ever "does this laser have enough output at this wavelength" — a Mai Tai eHP at
+  920 and an Axon at 1064 are both fine and the tool should say nothing. Heating
+  is not modelled at all: the tissue is dead.
+- **The >950 nm penalty is applied once, from the shortest wavelength in use.**
+  Anatomical background comes from the bluest beam on the sample, so one such
+  beam is enough to have context.
+
+A worked case, eGFP + tdTomato on a Mai Tai plus an Axon 1064: one laser gives
+940 nm as a compromise; both beams on gives 920 + 1064, with tdTomato at 117% of
+its own peak because two beams excite it. The hero shows a wavelength per beam,
+and in two-pass mode names which fluorophore belongs to which.
+
+### BakingTray handoff
+
+`#cfg=<base64url JSON>`, the same object as a config file. Fragments are not sent
+to the server, so the rig never leaves the machine.
+`matlab/channelChooserURL.m` is the reference encoder — its real job is to pin
+the format so the two ends cannot drift.

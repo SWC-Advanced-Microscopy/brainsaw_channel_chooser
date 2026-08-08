@@ -92,6 +92,20 @@
     return total;
   }
 
+  /* A copy of `curve` that stops dead at `hi` nm - the laser blocking filter in
+   * front of the detectors. Resampled at 1 nm so the result is an ordinary
+   * curve that charts and integration can use without knowing about any of it. */
+  function clipCurve(curve, hi) {
+    if (!curve) return null;
+    var lo = Math.floor(curve.x0);
+    var top = Math.min(Math.ceil(curve.x1), hi);
+    if (top <= lo) return new Curve({ x0: lo, dx: 1, y: [0, 0] });
+    var ys = [];
+    for (var x = lo; x <= top; x++) ys.push(curve.at(x));
+    ys.push(0);                       // close the edge rather than leaving a step
+    return new Curve({ x0: lo, dx: 1, y: ys });
+  }
+
   /* ------------------------------------------------------------ colour */
 
   /* Approximate sRGB for a visible wavelength (Bruton's piecewise fit).
@@ -159,6 +173,7 @@
 
   SV.Curve = Curve;
   SV.integrate = integrate;
+  SV.clipCurve = clipCurve;
   SV.wavelengthRGB = wavelengthRGB;
   SV.wavelengthLine = wavelengthLine;
   SV.withAlpha = withAlpha;
