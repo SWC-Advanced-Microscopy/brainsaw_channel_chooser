@@ -386,8 +386,12 @@
     var q = state.search.trim().toLowerCase();
     var famOn = Object.keys(state.families).filter(function (k) { return state.families[k]; });
     return CORE.fluorophores.filter(function (f) {
+      // Whatever is selected stays on the list, common or not: otherwise the
+      // only way to unpick an uncommon dye is to go back out to the full list
+      // and find it again. Unpicking it here is what makes it disappear.
+      var picked = state.selected.some(function (s) { return s.id === f.id; });
       // an explicit search always reaches the uncommon ones
-      if (state.commonOnly && !f.common && !q) return false;
+      if (state.commonOnly && !f.common && !q && !picked) return false;
       if (famOn.length && famOn.indexOf(f.family) < 0) return false;
       if (!q) return true;
       return f.name.toLowerCase().indexOf(q) >= 0 ||
