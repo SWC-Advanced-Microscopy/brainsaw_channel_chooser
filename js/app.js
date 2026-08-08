@@ -41,7 +41,8 @@
     scopeName: CORE.scopes[0].name,
     blockerNm: CORE.scopes[0].blockerNm || 700,
     laserIds: [],            // every laser fitted to this rig
-    laserMode: 'single',     // 'single' | 'simultaneous' | 'sequential'
+    laserOff: {},            // fitted but switched off, by id: hardware stays
+    laserMode: 'simultaneous',   // 'simultaneous' | 'sequential', among those on
     activeLaserId: null,     // the one the marker drags and the hero reports
     selected: [],            // [{id, source}]
     channels: [],
@@ -97,21 +98,27 @@
     return out.length ? out : [CORE.lasers[0]];
   }
 
-  /* The lasers the model should actually consider. In single mode that is the
-   * active one alone; otherwise it is all of them. */
+  /* The lasers actually switched on. A second laser is a hardware fact, so it
+   * is never removed to try life without it - it is switched off, the way you
+   * would on the rig. Something always has to be on. */
   function activeLasers() {
     var all = rigLasers();
-    if (state.laserMode === 'single') return [laser()];
-    return all;
+    var on = all.filter(function (l) { return !state.laserOff[l.id]; });
+    return on.length ? on : [all[0]];
   }
 
-  /* The laser the headline number and the draggable marker belong to. */
+  function laserIsOn(l) {
+    return activeLasers().indexOf(l) >= 0;
+  }
+
+  /* The laser the headline number and the draggable marker belong to. Always one
+   * that is switched on, and a tunable one where there is a choice. */
   function laser() {
-    var all = rigLasers();
-    var hit = all.filter(function (l) { return l.id === state.activeLaserId; })[0];
+    var on = activeLasers();
+    var hit = on.filter(function (l) { return l.id === state.activeLaserId; })[0];
     if (hit) return hit;
-    var tunable = all.filter(function (l) { return l.tunable !== false; })[0];
-    return tunable || all[0];
+    var tunable = on.filter(function (l) { return l.tunable !== false; })[0];
+    return tunable || on[0];
   }
   /* ---------------------------------------------------------- microscopes
    *
@@ -232,12 +239,11 @@
     state.laserIds = (sc.lasers || [sc.laser]).filter(Boolean);
     if (!state.laserIds.length) state.laserIds = [CORE.lasers[0].id];
     state.activeLaserId = null;
-    // a rig with two lasers fitted is presumed to use them; 'one at a time' is
-    // still a click away, and mode is a way of working rather than hardware, so
-    // it is not part of the config file
-    state.laserMode = state.laserIds.length > 1
-      ? (state.laserMode === 'single' ? 'simultaneous' : state.laserMode)
-      : 'single';
+    // a rig with two lasers fitted is presumed to be using them until the user
+    // switches one off. How you work is not hardware, so neither the on/off
+    // state nor the mode belongs in the config file.
+    state.laserOff = {};
+    if (state.laserMode !== 'sequential') state.laserMode = 'simultaneous';
     state.chosenWl = null;
   }
 
@@ -308,7 +314,7 @@
     if (!f) return null;
     if (entry.source && f.twop[entry.source]) return entry.source;
     if (f.twop[state.sourcePref]) return state.sourcePref;
-    return ['D', 'Z', 'M', 'F'].filter(function (k) { return f.twop[k]; })[0] || null;
+    return ['D', 'Z', 'M', 'E', 'F'].filter(function (k) { return f.twop[k]; })[0] || null;
   }
 
   /* GM is more informative than "% of own peak", so use it whenever every
@@ -405,7 +411,7 @@
         '<span class="fluor-swatch" style="background:' + fluorColor(f) + '"></span>' +
         '<span class="fluor-name">' + SV.escapeHtml(f.name) + '</span>' +
         '<span class="fluor-meta">' + (peak ? Math.round(peak) + ' nm' : 'no 2p') + '</span>' +
-        '<span class="src-tags">' + ['D', 'Z', 'M', 'F'].map(function (k) {
+        '<span class="src-tags">' + ['D', 'Z', 'M', 'E', 'F'].map(function (k) {
           return f.twop[k] ? '<span class="src-tag" title="' + CORE.sources[k].label + ' data">' + k + '</span>' : '';
         }).join('') + '</span>';
       var toggle = function () { toggleFluor(f.id); };
@@ -439,7 +445,7 @@
     buildSelection().forEach(function (s) {
       var li = document.createElement('li');
       li.className = 'sel-item';
-      var srcs = ['D', 'Z', 'M', 'F'].filter(function (k) { return s.fluor.twop[k]; });
+      var srcs = ['D', 'Z', 'M', 'E', 'F'].filter(function (k) { return s.fluor.twop[k]; });
       li.innerHTML =
         '<div class="sel-top">' +
           '<span class="sel-dot" style="background:' + s.color + '"></span>' +
@@ -448,7 +454,7 @@
         '</div>' +
         '<div class="sel-bottom">' +
           '<div class="seg small" role="radiogroup" aria-label="Data source for ' + SV.escapeHtml(s.fluor.name) + '">' +
-            ['D', 'Z', 'M', 'F'].map(function (k) {
+            ['D', 'Z', 'M', 'E', 'F'].map(function (k) {
               var on = s.source === k;
               return '<button role="radio" data-src="' + k + '" aria-checked="' + on + '"' +
                 (srcs.indexOf(k) < 0 ? ' disabled' : '') +
@@ -512,9 +518,9 @@
 
   /* -- rail: lasers ------------------------------------------------------ */
 
+  /* Only how the switched-on lasers combine. Running one laser is not a mode -
+   * it is the other one switched off, which is what the rig actually does. */
   var LASER_MODES = [
-    { id: 'single', label: 'One at a time',
-      note: 'Only the selected laser is on. Everything is scored against that one.' },
     { id: 'simultaneous', label: 'All on together',
       note: 'Every beam on at once, so each fluorophore collects excitation from all of them.' },
     { id: 'sequential', label: 'One pass per laser',
@@ -525,6 +531,7 @@
     var list = $('laser-list');
     var all = rigLasers();
     var activeId = laser().id;
+    var spare = (laserPlan(buildSelection()) || {}).spare || [];
     list.innerHTML = '';
 
     all.forEach(function (l, idx) {
@@ -558,18 +565,40 @@
       var actions = document.createElement('span');
       actions.className = 'chan-actions';
       if (all.length > 1) {
-        // In single mode any laser can be the one you are using, including a
-        // fixed line. In the other modes the button only points the marker at a
-        // laser, and there is nothing to point at on a single-line source.
-        var offerButton = state.laserMode === 'single' || l.tunable !== false;
-        if (l.id !== activeId && offerButton) {
+        /* One switch per laser, showing what is on right now. A line the model
+         * says you could do without is marked here rather than only in the
+         * advice, so the suggestion is where the switch is. */
+        var on = !state.laserOff[l.id];
+        var sw = document.createElement('button');
+        sw.type = 'button';
+        sw.className = 'laser-sw ' + (on ? 'is-on' : 'is-off') +
+          (on && spare.indexOf(l.id) >= 0 ? ' is-spare' : '');
+        sw.textContent = on ? 'ON' : 'OFF';
+        sw.title = on
+          ? (spare.indexOf(l.id) >= 0
+            ? 'On. This selection barely uses it — click to switch it off.'
+            : 'On. Click to switch it off.')
+          : 'Off. Click to switch it back on.';
+        sw.addEventListener('click', function () {
+          if (on && activeLasers().length < 2) {
+            toast('Something has to be on. Switch the other laser on first.');
+            return;
+          }
+          if (on) state.laserOff[l.id] = true; else delete state.laserOff[l.id];
+          if (state.activeLaserId === l.id && on) state.activeLaserId = null;
+          state.chosenWl = null;
+          renderAll();
+        });
+        actions.appendChild(sw);
+
+        // The Tune button only points the marker somewhere, so it is offered for
+        // lasers that are on, tunable, and not already the one under the marker.
+        if (l.id !== activeId && l.tunable !== false && !state.laserOff[l.id]) {
           var use = document.createElement('button');
           use.className = 'btn small ghost';
           use.type = 'button';
-          use.textContent = state.laserMode === 'single' ? 'Use' : 'Tune';
-          use.title = state.laserMode === 'single'
-            ? 'Make this the laser everything is scored against'
-            : 'Point the draggable marker at this laser';
+          use.textContent = 'Tune';
+          use.title = 'Point the draggable marker at this laser';
           use.addEventListener('click', function () {
             state.activeLaserId = l.id;
             state.chosenWl = null;
@@ -585,7 +614,7 @@
         rm.addEventListener('click', function () {
           state.laserIds.splice(idx, 1);
           if (state.activeLaserId === l.id) state.activeLaserId = null;
-          if (state.laserIds.length < 2) state.laserMode = 'single';
+          delete state.laserOff[l.id];
           state.chosenWl = null;
           renderAll();
         });
@@ -597,16 +626,17 @@
       list.appendChild(li);
     });
 
-    // mode only means anything once there is more than one laser on the rig
+    // mode only means anything once more than one laser is actually switched on
+    var nOn = activeLasers().length;
     var modeWrap = $('laser-mode-wrap');
-    modeWrap.hidden = all.length < 2;
+    modeWrap.hidden = nOn < 2;
     $('laser-mode').value = state.laserMode;
     var mode = LASER_MODES.filter(function (m) { return m.id === state.laserMode; })[0];
     $('laser-mode-note').textContent = mode ? mode.note : '';
 
     // the two-pass option is honest about not being buildable yet
     var warn = $('laser-mode-warning');
-    warn.hidden = !(all.length > 1 && state.laserMode === 'sequential');
+    warn.hidden = !(nOn > 1 && state.laserMode === 'sequential');
   }
 
   /* -- charts ------------------------------------------------------------ */
@@ -842,12 +872,76 @@
   var _recCache = null, _recKey = '';
   function currentRec(sel) {
     var key = JSON.stringify([state.selected.map(sourceFor), state.selected.map(function (s) { return s.id; }),
-      state.laserIds, state.laserMode, laser().id, state.objective, state.ctxStrength, state.minWl]);
+      state.laserIds, state.laserOff, state.laserMode, laser().id,
+      state.objective, state.ctxStrength, state.minWl]);
     if (key === _recKey) return _recCache;
     _recKey = key;
     _recCache = sel.length ? SV.optics.recommend(sel, activeLasers(), recOpts()) : null;
     return _recCache;
   }
+  /* Which of the switched-on lasers you actually need.
+   *
+   * A rig having two lines does not mean a session has to use both, and the tool
+   * cannot tell which way to go: how much signal a fluorophore gives depends on
+   * how well it is expressed in that brain, which only the person at the
+   * microscope knows. So this works out the best answer with everything on and
+   * the best answer with each line on its own, and hands both back as choices.
+   *
+   * The one thing it can say outright is when a beam contributes essentially
+   * nothing to anything selected - eGFP gets 0.1 GM out of an Axon 1064 - and
+   * then it says switch it off.
+   */
+  var SPARE_FRACTION = 0.05;    // below this share of a fluorophore, a beam is doing nothing
+  var ANATOMY_CUTOFF = 950;     // above this a beam gives no background to register against
+  var SOLO_FLOOR = 0.15;        // a one-line answer worth less than this is not an option
+  var _planCache = null, _planKey = '';
+  function laserPlan(sel) {
+    var rec = currentRec(sel);              // sets _recKey, which keys this too
+    var key = _recKey;
+    if (key === _planKey && _planCache) return _planCache;
+    var on = activeLasers();
+    var plan = { rec: rec, on: on, spare: [], solo: null, all: null };
+    /* Switching a line off has to be reversible from the same place it was
+     * offered, or the suggestion is a one-way door. */
+    if (rec && rec.best && rigLasers().length > on.length) {
+      var all = SV.optics.recommend(sel, rigLasers(), recOpts());
+      if (all && all.best && all.best.obj > rec.best.obj * 1.1) plan.all = all;
+    }
+    if (rec && rec.best && on.length > 1) {
+      on.forEach(function (l, i) {
+        // what this beam gives each fluorophore, as a share of what it gets
+        var idle = rec.best.contrib.every(function (parts, fi) {
+          var tot = rec.best.raw[fi];
+          return !tot || parts[i] / tot < SPARE_FRACTION;
+        });
+        if (idle) plan.spare.push(l.id);
+      });
+      /* One alternative, not one per line. Dropping to a single beam is a real
+       * choice only for the best of them, and only if that answer is worth
+       * having - "1064 nm alone" scores zero for eGFP + mCherry and is not an
+       * option, it is a mistake. And when a line is doing nothing there is no
+       * trade-off to weigh: the advice just says switch it off. */
+      if (!plan.spare.length) {
+        on.forEach(function (l) {
+          /* A line that cannot get below the anatomy cut-off is not something to
+           * run on its own: an Axon 1064 by itself excites tdTomato beautifully
+           * and leaves every other channel dark, so there is nothing to register
+           * the sections against. It is a beam to add, not a beam to use alone. */
+          if (l.range[0] >= ANATOMY_CUTOFF) return;
+          var solo = SV.optics.recommend(sel, [l], Object.assign(recOpts(), { activeId: l.id }));
+          if (!solo || !solo.best) return;
+          if (solo.best.obj < SOLO_FLOOR * rec.best.obj) return;
+          if (!plan.solo || solo.best.obj > plan.solo.rec.best.obj) {
+            plan.solo = { laser: l, rec: solo };
+          }
+        });
+      }
+    }
+    _planKey = key;
+    _planCache = plan;
+    return plan;
+  }
+
   function chosenWavelength(rec) {
     if (state.chosenWl != null) return state.chosenWl;
     return rec && rec.best ? rec.best.wl : null;
@@ -892,12 +986,15 @@
       var allSat = rec && rec.usable && rec.usable.length &&
         rec.usable.every(function (s) { return s.sat; });
       if (allSat) {
-        subParts.push('Longest wavelength where ' + (n > 1 ? 'all ' + n + ' dyes are' : 'the dye is') +
+        subParts.push('Longest wavelength where ' +
+          (n === 1 ? 'the dye is' : n === 2 ? 'both dyes are' : 'all ' + n + ' dyes are') +
           ' still bright enough.');
       } else {
-        subParts.push((state.objective === 'balanced'
-          ? 'Best worst-case across ' + n + ' fluorophore' + (n > 1 ? 's' : '')
-          : 'Best average signal across ' + n + ' fluorophore' + (n > 1 ? 's' : '')) + basis + '.');
+        // The objective picker in the rail already says whether it is balancing
+        // the weakest fluorophore or the average, so repeating it here just adds
+        // jargon to the first line the user reads.
+        subParts.push(n + ' fluorophore' + (n > 1 ? 's' : '') +
+          (state.objective === 'balanced' ? '' : ', averaged') + basis + '.');
       }
     }
     // with more than one laser on the rig, the answer is a wavelength each -
@@ -928,20 +1025,62 @@
     var alts = $('hero-alts');
     alts.innerHTML = '';
     if (rec) {
-      var picks = rec.candidates.slice(0, 4);
+      var plan = laserPlan(sel);
+      var on = plan.on;
+      /* A chip is a whole configuration, not a wavelength: which lines are on
+       * and what each is tuned to. With two beams "940 nm" and "920 nm &
+       * 1064 nm" are different answers to the same question, and the user is
+       * the one who knows whether the extra line is worth it. */
+      var label = function (wls, lasers) {
+        return lasers.map(function (l, i) { return wls[i] + ' nm'; }).join(' & ');
+      };
+      var chips = [];
+      var picks = rec.candidates.slice(0, on.length > 1 ? 2 : 4);
       if (rec.best && wl !== rec.best.wl) {
-        picks = [rec.best].concat(picks.filter(function (c) { return c.wl !== rec.best.wl; })).slice(0, 4);
+        picks = [rec.best].concat(picks.filter(function (c) { return c.wl !== rec.best.wl; }));
       }
       picks.forEach(function (c) {
         if (c.wl === wl) return;
+        chips.push({ text: label(c.wls, on), rel: c.obj / rec.best.obj, wl: c.wl, off: null,
+          tip: 'Switch the marker to ' + c.wl + ' nm' });
+      });
+      // the way back: what the lines you have switched off would buy you. It is
+      // better than where you are, by construction, so it leads.
+      if (plan.all) {
+        chips.unshift({
+          text: label(plan.all.best.wls, rigLasers()),
+          rel: plan.all.best.obj / rec.best.obj, wl: plan.all.best.wl, on: true,
+          tip: 'Switch every fitted laser on and use them together',
+        });
+      }
+      // and the same question asked of the best line on its own
+      if (plan.solo) {
+        chips.push({
+          text: plan.solo.rec.best.wl + ' nm alone',
+          rel: plan.solo.rec.best.obj / rec.best.obj,
+          wl: plan.solo.rec.best.wl, off: plan.solo.laser.id,
+          tip: 'Switch the other line off and use the ' + plan.solo.laser.name + ' by itself',
+        });
+      }
+      chips.slice(0, 4).forEach(function (c) {
         var b = document.createElement('button');
         b.className = 'alt-btn';
         b.type = 'button';
-        b.textContent = c.wl + ' nm · ' + pct(c.obj / (rec.best ? rec.best.obj : c.obj));
-        b.title = 'Switch the marker to ' + c.wl + ' nm';
+        /* A share of the current answer, floored so a close second never reads
+         * as 100% of the thing it lost to — and as a multiplier when the option
+         * is the better one, because "99%" would be nonsense there. */
+        b.textContent = c.text + (c.rel == null ? ''
+          : c.rel > 1.02 ? ' · ' + c.rel.toFixed(1) + '×'
+          : ' · ' + Math.min(99, Math.floor(c.rel * 100)) + '%');
+        b.title = c.tip;
         b.addEventListener('click', function () {
+          if (c.off) {
+            on.forEach(function (l) { if (l.id !== c.off) state.laserOff[l.id] = true; });
+            state.activeLaserId = c.off;
+          }
+          if (c.on) { state.laserOff = {}; state.activeLaserId = null; }
           state.chosenWl = c.wl;
-          renderCharts(); renderRecommendation();
+          renderAll();
         });
         alts.appendChild(b);
       });
@@ -1018,7 +1157,8 @@
     // advice
     var items = SV.explain({
       rec: rec, focus: focus, selection: sel, laser: laser(),
-      channels: state.channels, laserMode: state.laserMode,
+      channels: state.channels, laserMode: state.laserMode, plan: laserPlan(sel),
+      rig: rigLasers(),
     });
     // the acquisition plan is shown in the "Channels to acquire" panel, not here
     var ul = $('advice');
@@ -1305,7 +1445,7 @@
   function compactState() {
     return {
       s: state.scopeId, sn: state.scopeName, bl: state.blockerNm,
-      l: state.laserIds, lm: state.laserMode, la: laser().id,
+      l: state.laserIds, lo: Object.keys(state.laserOff), lm: state.laserMode, la: laser().id,
       f: state.selected.map(function (x) { return x.id + (x.source ? ':' + x.source : ''); }),
       p: state.sourcePref, o: state.objective, c: state.ctxStrength, m: state.minWl,
       k: state.commonOnly ? 1 : 0, u: state.unitsLocked ? state.excUnits : null,
@@ -1355,7 +1495,9 @@
       if (o.sn) state.scopeName = o.sn;
       if (o.bl != null) state.blockerNm = o.bl;
       if (o.l) state.laserIds = Array.isArray(o.l) ? o.l : [o.l];
-      if (o.lm) state.laserMode = o.lm;
+      state.laserOff = {};
+      (o.lo || []).forEach(function (id) { state.laserOff[id] = true; });
+      if (o.lm) state.laserMode = o.lm === 'single' ? 'simultaneous' : o.lm;
       if (o.la) state.activeLaserId = o.la;
       state.selected = (o.f || []).map(function (t) {
         var parts = t.split(':');

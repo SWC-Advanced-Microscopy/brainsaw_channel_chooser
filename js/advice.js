@@ -73,6 +73,11 @@
         'at ' + best.wl + ' nm, so this is a power-limited choice.' });
     }
 
+    // declared up here because the >950 nm advice below needs it too; when it
+    // was declared further down that test silently read undefined and the
+    // "best option at or below 950 nm" suggestion never appeared
+    var anyTunable = (rec.lasers || [laser]).some(function (l) { return l.tunable !== false; });
+
     /* --- the >950 nm problem ---------------------------------------------- */
     if (best.wl > 950) {
       /* The scarcity of background autofluorescence up here is a property of the
@@ -102,12 +107,69 @@
 
     /* --- fixed-line lasers -------------------------------------------------
      * Nothing to choose, so say what you have got rather than pretending. */
-    var anyTunable = (rec.lasers || [laser]).some(function (l) { return l.tunable !== false; });
     if (!anyTunable) {
       items.push({ kind: 'info', text:
         'The ' + laser.name + ' is a single-line source, so ' + best.wl + ' nm is not a ' +
         'recommendation — it is the only wavelength you have. The chart shows how well ' +
         'your selection is excited there.' });
+    }
+
+    /* --- the lone-beam cap --------------------------------------------------
+     * Say what the cap cost, rather than quietly stopping. These curves change
+     * slowly, so the exact number matters much less than knowing which way the
+     * trade runs and that the user is allowed to move along it. */
+    var capped = false;
+    if (rec.cap && rec.beyond && best.wl >= rec.cap - 20) {
+      var gains = usable.map(function (s, i) {
+        return { name: name(s), r: rec.beyond.raw[i] / (best.raw[i] || 1) };
+      }).filter(function (g) { return g.r > 1.2; })
+        .sort(function (a, b) { return b.r - a.r; });
+      if (gains.length) {
+        items.push({ kind: 'info', text:
+          list(gains.map(function (g) { return g.name; })) +
+          (gains.length > 1 ? ' keep' : ' keeps') + ' getting brighter above ' + rec.cap +
+          ' nm — ' + gains[0].name + ' is ' + gains[0].r.toFixed(1) + '× at ' +
+          Math.round(rec.beyond.wl / 10) * 10 + ' nm — and you can go there. What you give up is the ' +
+          'background in the other channels, which is what you register sections ' +
+          'against, so this stops at ' + rec.cap + ' nm rather than chasing the ' +
+          'cross-section. 920 nm works too and leaves a little more of it. These ' +
+          'spectra change slowly: ±10 nm is rarely the thing that matters.' });
+        capped = true;
+      }
+    }
+
+    /* --- do you need the second line? --------------------------------------
+     *
+     * A rig having two lines does not mean a session has to use both. Whether
+     * the extra beam is worth it turns on how well the protein is expressed in
+     * that particular brain, which this page cannot know and the person at the
+     * microscope can. So it lays out the two configurations and lets them pick,
+     * and only speaks plainly in the one case where a beam does nothing at all.
+     */
+    var plan = ctx.plan;
+    if (plan && plan.on.length > 1) {
+      plan.on.forEach(function (l, i) {
+        if (plan.spare.indexOf(l.id) < 0) return;
+        var rest = plan.on.filter(function (o) { return o.id !== l.id; });
+        items.push({ kind: 'info', text:
+          'The ' + l.name + ' is doing nothing for this selection — nothing here is ' +
+          'excited at ' + best.beams[i].wl + ' nm. Switch it off and work with the ' +
+          list(rest.map(function (o) { return o.name; })) + ' alone.' });
+      });
+      if (plan.solo) {
+        var s = plan.solo;
+        // whichever fluorophore has the most to lose by dropping the second line
+        var weakest = usable.reduce(function (w, u, i) {
+          var r = s.rec.best.per[i] / (best.per[i] || 1);
+          return r < w.r ? { r: r, name: name(u) } : w;
+        }, { r: Infinity, name: '' });
+        items.push({ kind: 'info', text:
+          'Two clear choices here. ' + s.rec.best.wl + ' nm on the ' + s.laser.name +
+          ' alone is the best one-line answer, and one line is simpler. ' +
+          best.beams.map(function (b) { return b.wl + ' nm'; }).join(' + ') + ' with both on ' +
+          'gives ' + weakest.name + ' ' + more(weakest.r) + ', worth having if you ' +
+          'suspect it is weakly expressed.' });
+      }
     }
 
     /* --- the tracers -------------------------------------------------------
@@ -188,7 +250,7 @@
     });
 
     /* --- convention vs the measured optimum -------------------------------- */
-    if (usable.length === 1 && anyTunable && (rec.lasers || []).length < 2) {
+    if (usable.length === 1 && anyTunable && !capped && (rec.lasers || []).length < 2) {
       var conv = CONVENTIONAL[usable[0].fluor.id];
       if (conv && Math.abs(conv.wl - best.wl) > 20) {
         var inRange = conv.wl >= Math.max(laser.range[0], rec.minWl) && conv.wl <= laser.range[1];
@@ -196,12 +258,47 @@
         var atBest = usable[0].twopCurve.at(best.wl) || 1;
         items.push({ kind: 'info', text:
           conv.wl + ' nm is ' + conv.note + '. ' + (inRange
-            ? 'On the ' + sourceLabel(ctx) + ' data that is ' + pct(atConv / atBest) +
+            ? 'On the ' + sourceLabel(ctx) + ' data that is ' + ratio(atConv / atBest) +
               ' of the cross-section you get at ' + best.wl + ' nm — often worth it anyway, ' +
               'since it sits closer to the laser’s power peak and is what everyone else uses.'
             : 'Your ' + laser.name + ' cannot reach it (' +
               Math.max(laser.range[0], rec.minWl) + '–' + laser.range[1] + ' nm).') });
       }
+    }
+
+    /* --- dTomato ------------------------------------------------------------
+     * Almost nobody means to use it, and the name is one letter away from the
+     * one they do mean, so say what it is before saying anything about it. */
+    var dtom = (ctx.selection || []).filter(function (s) { return s.fluor.id === 'dtomato'; })[0];
+    if (dtom) {
+      // Only worth naming a laser if there is one fitted, switched off, and
+      // markedly better for it than anything currently running.
+      // Best signal each laser could actually deliver, power included: a Mai Tai
+      // technically reaches 1040 nm but has little left there, which is exactly
+      // the situation a fixed red line is bought to fix.
+      var reach = function (l) {
+        var c = dtom.gmCurve || dtom.twopCurve;
+        if (!c) return 0;
+        var v = 0;
+        for (var w = Math.max(700, l.range[0]); w <= l.range[1]; w += 5) {
+          v = Math.max(v, c.at(w) * SV.optics.powerWeight(l, w));
+        }
+        return v;
+      };
+      var onBest = (plan && plan.on ? plan.on : [laser]).reduce(function (m, l) {
+        return Math.max(m, reach(l));
+      }, 0);
+      var longLine = (ctx.rig || []).filter(function (l) {
+        return (plan ? plan.on : []).indexOf(l) < 0 && reach(l) > onBest * 1.25;
+      })[0];
+      items.push({ kind: 'info', text:
+        'dTomato is the single unit that tdTomato is built from: tdTomato links two of ' +
+        'them head to tail, so for the same number of molecules it absorbs about twice as ' +
+        'much light. That is why tdTomato is the one people use. There is no published ' +
+        'two-photon spectrum for dTomato, so what is plotted is tdTomato’s curve at half ' +
+        'the cross-section — an estimate, not a measurement.' +
+        (longLine ? ' With half the signal to work with, switch the ' + longLine.name +
+          ' on — it reaches the 1052 nm peak that the rest of your rig does not.' : '') });
     }
 
     /* --- fluorophores with no 2p data -------------------------------------- */
@@ -316,6 +413,16 @@
   }
 
   function name(s) { return s.fluor.name; }
+
+  /* Percentages stop reading as percentages past about half as much again. */
+  function ratio(r) { return r > 1.5 ? r.toFixed(1) + '\u00d7' : pct(r); }
+
+  /* "31% more" reads like a real number; "1× more" reads like a bug. */
+  function more(r) {
+    if (!(r > 0) || r >= 1) return 'more';
+    var f = 1 / r;
+    return f < 2 ? Math.round((f - 1) * 100) + '% more' : Math.round(f) + '× more';
+  }
 
   function list(names) {
     if (!names.length) return 'nothing';

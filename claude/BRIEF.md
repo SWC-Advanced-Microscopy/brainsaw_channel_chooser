@@ -407,3 +407,28 @@ wavelength_nm         760      780      820     850     920
 DiI               10302.0   1990.0    262.0   264.0  2880.0
 DiD               25645.0  28828.0  24535.0  5883.0   782.0
 DiO                  59.0    143.0    246.0   715.0  4032.0
+
+
+
+## Feedback on choices
+After the DiI commit, let's look at how well the suggestions for excitation wavelength are working. 
+Mai Tai alone and 4 channels:
+1. eGFP and tdTomato suggests 940 nm. Agree. good
+2. eCFP and eYFP. Deliberately bad combination. Suggestions of 870 to 910 nm all make sense. 
+3. eBFP and mCherry at 760 nm makes sense. good.
+4. eGFP, eBFP, and mCherry at 770 to 800 nm makes sense. good.
+5. eGFP, and mCherry at 800 nm makes sense. good.
+
+Now I try tunable laser (Mai Tai) plus an Axon 1060
+1. eGFP, and mCherry. Suggests 820 nm on Mai Tai. WHY? Here GFP signal is half and we get mCherry at 4% of its max. That adds nothing meaningful to the 1064 nm line. At 920 nm, GFP is at max and mCherry is 2%. Clearly around 920 nm makes the most sense. NEEDS CORRECTING.
+2. eGFP and tdTomato. Suggests tunable at 920 nm. Good makes sense. BUT -- the second beam isn't necessary. Since we get pretty good signal also at 940 nm. So (and this is a substantial change, maybe) you should suggest to the user that they can use ONLY the 940 nm line. **THE IDEA** the rig has two lines, sure, but that doesn't mean the user HAS to use them. If they add not much, then you should provide alternatives. If they add nothing. State that the second line should be off. In the laser boxes you have made add red "OFF" text for the laser that can be off. Green "ON" text for the laser that will be on. ONLY do this if there is more than one line. Otherwise it will be confusing. The idea is that the ON and OFF should display according to the current state displayed. The "alternatives" should be aware of that. So it should (940 nm) if only the MaiTai is on. But (940 nm & 1064 nm) if both are to be on. Presumably the user must be able to click on the lasers to turn them on and off to try different configs. Remember the issue is that the presence of the second laser is a hardware feature. We don't want to add and remove it. We want to toggle it's availability depending on need. 
+3. tdTom and mCherry. Suggest tunable at 760 nm. Makes sense good. 
+4. eYFP and tdTom. Suggest tunable at 960 nm. Indeed that's optimal but it could also work without. 
+5. eYFP and mCherry. Suggests 940 nm for tunable line. NO! This isn't peak for YFP and there is LESS signal in mCherry than at 960 nm which is peak for YFP. Signal is HIGHER for both fluorophores at 960 nm. 940 is is worse all around. 
+6. eCFP and mCherry. Tunable line at 860 nm where we have eCFP peak. GOOD. that is a reasonable choice. 
+7. mCherry and DiI. Suggests 760 nm. This isn't wrong. it's the peak. But then you should suggest no 1064 nm line needed (this is a new feature, you couldn't do that in testing here). What you COULD do in testing here which is equally a good choice is 920 nm. As we know DiI is good there and we have the 1064 nm line for mCherry. That said: there is a lot MORE mCherry at 760 nm and at that wavelength we don't need the co-aligned 1064 nm line. So you need to balance those things and report. 
+8. mCherry on its own. You correctly suggest 760 nm. You should tell the user they don't need the 1064 nm line. 
+9. tdTomato on its own. You suggest 940 nm plus the single line. This is a reasonable choice because it gives the user background signal in green from the 940 nm plus also a bit of extra signal in red maybe plus the 1064 nm hitting the tdTom. You can tell the user that, unless tdTom signal is weak, they don't need the 1064 nm line. **EXTRA POINT**  tdTomato is a tandem dimer made by linking two dTomato units head-to-tail, making tdTomato vastly brighter, more stable, and widely preferred for biological imaging over the standard dimeric dTomato. SO: add dTomato to the dye list. We don't have GM readings for it. We guess by using HALF the tdTom values. If the user has selected dTomato then the message text should say what I explained just now. That it's dimmer and why. So they should the 1064 nm line if available. No point telling them that latter point if there is no 1064 nm line on the microscope. But the explanation should be there because people won't know what the dTomato is. 
+
+**An additional note**
+The eGFP plus tomato case is unclear. I don't have data. 940 nm could be fine or it might need the extra line to boost the tomato. So give the user those choices. 940 nm is more simple. So you can say: "940 nm is the optimal with one line, but if the tomato signal is suspected to be weak, 920 nm plus 1064 nm might give better overall results". Just make it obvious that those are the two clear choices. Then the user can choose. Remember: these proteins are being expressed in the brain. If expression is good there is LOTS of protein = big signal. Low expression and we have problems. We don't know the situation here, making our webpage. Only the user does.

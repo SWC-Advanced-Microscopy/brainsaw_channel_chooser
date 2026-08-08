@@ -155,12 +155,21 @@ microscope and its channels.
 | 2p spectra, "Z" | [Zipfel lab, Cornell](https://www.drbio.cornell.edu/cross_sections.html) | absolute (GM) |
 | 2p spectra, "F" | [FPbase](https://www.fpbase.org) | relative |
 | 2p spectra, "M" | measured on BrainSaw at SWC | arbitrary |
+| 2p spectra, "E" | estimated, not measured | absolute (GM) |
 | 1p excitation / emission | FPbase | normalised |
 | Filter transmission | FPbase filter library | fraction transmitted |
 
 Chroma's spectra viewer was checked as a two-photon source and does not have
 one — its open API exposes 203 fluorochromes and 913 dyes, none with 2p data. The
 FPbase 2P collection (99 spectra, largely Drobizhev-derived) is used instead.
+
+**dTomato** has no published two-photon spectrum. tdTomato is two dTomato units
+linked head to tail on one polypeptide, so it carries the same chromophore twice
+and absorbs about twice as much light for the same number of molecules: dTomato's
+curve is tdTomato's shape at half the cross-section, carried under source "E" so it
+is never mistaken for a measurement. It is in the common list next to tdTomato
+because the names are one letter apart and anyone who lands on it deserves to be
+told the difference.
 
 FPbase has no `tdStayGold` entry, so the parent **StayGold** is used. StayGold and
 Venus have no usable two-photon spectrum — Venus's FPbase "2P" curve actually
@@ -262,9 +271,20 @@ have already fallen away by the left edge instead of being sliced through mid-ri
 and it is comfortably below the 760 nm floor for recommendations, so nothing usable
 is lost.
 
-Multiple fluorophores are combined either as the **worst case** (default, so
-nothing is left unusable) or the **average**. The 1 nm optimum is then snapped to
-a round number, preferring conventional values when they score within 2%.
+Multiple fluorophores are combined either **balanced** (the default) or as the
+**average**. Balanced is the harmonic mean of the per-fluorophore scores, not a
+strict worst case. A strict worst case reads well and behaves badly: put two beams
+on the sample and the weakest fluorophore's total stops moving, so the minimum goes
+flat and the answer slides to an arbitrary point on the plateau. eGFP + mCherry on
+a Mai Tai and an Axon 1064 landed on 820 nm, throwing away half of eGFP to lift
+mCherry by 4.7 GM on top of the 22 GM the fixed line already gave it. The harmonic
+mean keeps what the minimum was for — it still collapses to zero if anything is
+left unexcited, so nothing can be abandoned — but it will not trade a large loss
+for a token gain.
+
+The 1 nm optimum is then snapped to a round number. Being a wavelength people
+actually dial in is worth 3% of score, applied as a sort key rather than as a
+tolerance band, so the ordering is a real ordering.
 
 **Alternatives are only offered when they are genuine trade-offs.** A candidate
 has to beat the recommendation for at least one selected fluorophore. Suggesting
@@ -303,9 +323,14 @@ well the selection is excited rather than pretending to choose.
 A rig can have several lasers, listed in the rail. What that means is a choice,
 because it changes the maths:
 
+Each fitted laser has an **ON / OFF** switch. A second line is a hardware fact, so
+it is never removed to try life without it — it is switched off, the way it would
+be on the rig, and switched back on from the same place. Running one laser is not
+a mode; it is the other one switched off. What remains a mode is how the
+switched-on lasers combine:
+
 | Mode | What it models |
 |---|---|
-| **One at a time** | Only the selected laser is on. |
 | **All on together** | Every beam on at once, so each fluorophore collects excitation from all of them and the contributions add. |
 | **One pass per laser** | Image once with each laser and merge, so every fluorophore gets whichever beam suits it — what counts is its best single pass. |
 
@@ -313,6 +338,26 @@ The last of those **cannot be done on a BrainSaw today** and says so in red. It 
 selectable because it is worth knowing what it would buy: a Mai Tai at 920 nm plus
 an Axon at 1064 nm gives eGFP and tdTomato each close to their own peak, which no
 single wavelength can.
+
+**A lone beam is never sent past 940 nm.** One beam has to do both jobs — excite
+the label and leave the other channels enough autofluorescence to register sections
+against — and past ~940 nm the green channel's background is going. This is a
+constraint, not a cost, because a cost can always be outbid and here it should not
+be: tdTomato is 60% brighter at 1010 nm than at 940, and no penalty gentle enough
+to be fair at 960 nm will refuse that. The advice says what the cap is costing
+("tdTomato is 2.1× at 1010 nm — and you can go there") so the trade is visible
+rather than silently made. With a second, bluer beam on the sample the anatomy is
+covered and the red one goes wherever it likes, so this never applies to more than
+one beam, nor to a fixed line, nor to a laser that cannot tune below 940 nm.
+
+**Whether you need the second line is your call, not the tool's.** How much signal
+a fluorophore gives depends on how well it is expressed in that brain, which the
+page cannot know. So it works out the best answer with everything on and the best
+answer with the strongest line on its own, and offers both — as chips ("940 nm
+alone · 58%" beside "920 nm & 1064 nm") and in the advice. The one thing it does
+say outright is when a beam contributes under 5% to everything selected: then its
+ON switch turns amber and the advice says switch it off. eGFP gets 0.1 GM out of an
+Axon 1064; there is nothing to weigh.
 
 The >950 nm context penalty is applied once, from the **shortest** wavelength in
 use, not per beam — the background that gives you anatomy comes from the bluest

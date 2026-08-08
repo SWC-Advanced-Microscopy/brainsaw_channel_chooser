@@ -55,6 +55,15 @@
   var CTX_FULL = 950;    // below this there is still usable background signal
   var CTX_SPAN = 110;    // nm above CTX_FULL over which the penalty ramps in
   var CTX_MAX = 0.4;
+  /* Where a lone beam stops being sent. One beam has to do both jobs - excite
+   * the label and leave the other channels enough autofluorescence to register
+   * sections against - and past here the green channel's background is going.
+   * A constraint rather than a cost, because a cost can always be outbid and
+   * here it should not be: tdTomato is 60% brighter at 1010 nm than at 940, and
+   * no penalty that is fair at 960 nm is heavy enough to refuse that. With a
+   * second, bluer beam on the sample the anatomy is covered and the red one is
+   * free to go wherever it likes, so this never applies to more than one. */
+  var SOLO_CAP = 940;
   var DEFAULT_MIN_WL = 760;
   var EM_LO = 380, EM_HI = 800;   // integration window for emission / detection
 
@@ -247,6 +256,7 @@
     return out;
   }
 
+  var NICE_BONUS = 0.03;   // how much a conventional wavelength is worth
   var MAX_COMBOS = 50000;
 
   function combos(grids) {
@@ -271,11 +281,15 @@
    *
    * `opts.combine` says what having more than one laser means:
    *
-   *   'single'        one laser, the way most rigs work.
    *   'simultaneous'  every beam on at once, so a fluorophore collects excitation
    *                   from all of them and the contributions add.
    *   'sequential'    one pass per laser, each fluorophore imaged in whichever
    *                   pass suits it, so what counts is the best single pass.
+   *
+   * Only lasers that are switched on are passed in. Whether the second one
+   * should be on is not decided here - the caller asks this function twice and
+   * puts both answers in front of the user, because how much signal a
+   * fluorophore gives depends on how well it is expressed in that brain.
    *
    * The >950 nm context penalty is applied once, from the SHORTEST wavelength in
    * use, not per beam: the background that gives you anatomy comes from the
@@ -295,6 +309,15 @@
 
     var usable = selection.filter(function (s) { return s.twopCurve; });
     if (!usable.length) return null;
+
+    // Only bites on a single beam, and only while there is something usable
+    // below it. A fixed line, or a rig that cannot tune down that far, is left
+    // exactly where it is.
+    var cap = (lasers.length === 1 && lasers[0].tunable !== false &&
+               Math.max(minWl, lasers[0].range[0]) <= SOLO_CAP) ? SOLO_CAP : null;
+    var withinCap = function (wls) {
+      return cap == null || wls.every(function (w) { return w <= cap; });
+    };
 
     // the laser the marker drags and the headline number belongs to
     var active = 0;
@@ -358,10 +381,13 @@
 
       var from = [];                       // sequential: which pass each fluor uses
       var clears = allSaturating;          // every dye already bright enough here
+      var contrib = [];                    // what each beam gives each fluorophore
+      var raw = [];                        // before the anatomy penalty
       var per = usable.map(function (s) {
-        var v = 0, pick = 0;
+        var v = 0, pick = 0, parts = [];
         for (var i = 0; i < lasers.length; i++) {
           var term = sigma(s, wls[i]) * pw[i];
+          parts.push(term);
           if (combine === 'sequential') {
             if (term > v) { v = term; pick = i; }
           } else {
@@ -369,7 +395,9 @@
           }
         }
         from.push(pick);
+        contrib.push(parts);
         if (v < 0.999) clears = false;
+        raw.push(v);
         return v * cw;
       });
 
@@ -379,12 +407,29 @@
         usable.forEach(function (s, i) { tot += per[i] * (s.weight || 1); wsum += (s.weight || 1); });
         obj = wsum ? tot / wsum : 0;
       } else {
-        obj = Math.min.apply(null, per);
+        /* Balanced. A strict worst case reads well and behaves badly: put two
+         * beams on the sample and the weakest fluorophore's total stops moving,
+         * so the minimum goes flat and the answer slides to an arbitrary point
+         * on the plateau. eGFP + mCherry on a Mai Tai and an Axon 1064 landed on
+         * 820 nm, throwing away half of eGFP to lift mCherry by 4.7 GM on top of
+         * the 22 GM the fixed line already gave it.
+         *
+         * The harmonic mean fixes that while keeping what the minimum was for:
+         * it still collapses to zero if anything is left unexcited, so a
+         * fluorophore cannot be abandoned, but it will not trade a large loss
+         * for a token gain. */
+        var inv = 0, iw = 0, dead = false;
+        usable.forEach(function (s, i) {
+          var w = s.weight || 1;
+          if (per[i] <= 0) dead = true;
+          else { inv += w / per[i]; iw += w; }
+        });
+        obj = (dead || !inv) ? 0 : iw / inv;
       }
       var tot = per.reduce(function (a, b) { return a + b; }, 0);
       return {
         wls: wls, wl: wls[active], obj: obj, tot: tot, per: per, ctx: cw, from: from,
-        clears: clears,
+        clears: clears, raw: raw, contrib: contrib,
         power: aL._curve ? aL._curve.at(wls[active]) : 1,
         mw: sampleMw(aL, wls[active]),
         beams: lasers.map(function (l, i) {
@@ -395,9 +440,15 @@
 
     /* --- the raw optimum, over every combination on a 2 nm grid ---------- */
     var fine = combos(lasers.map(function (l) { return laserGrid(l, minWl, 2); }));
-    var best = null;
+    var best = null, beyond = null;
     fine.forEach(function (v) {
       var r = evalVec(v);
+      // what the cap is costing, so the advice can say so rather than just
+      // quietly stopping at 940 nm
+      if (!withinCap(v)) {
+        if (!beyond || r.tot > beyond.tot) beyond = r;
+        return;
+      }
       if (!best || r.obj > best.obj * 1.0001) { best = r; return; }
       if (r.obj <= best.obj * 0.9999) return;
       // Every dye already over the bar both ways: nothing is bought by going
@@ -428,23 +479,32 @@
     /* --- round-number candidates ----------------------------------------- */
     var cands = [];
     combos(lasers.map(function (l) { return laserGrid(l, minWl, 10); })).forEach(function (v) {
+      if (!withinCap(v)) return;
       var r = evalVec(v);
       if (r.obj <= 0) return;
       r.rel = r.obj / best.obj;
+      var tunables = 0;
       r.nice = lasers.reduce(function (n, l, i) {
-        return n + (l.tunable === false ? 0 : niceness(v[i]));
+        if (l.tunable === false) return n;
+        tunables++;
+        return n + niceness(v[i]);
       }, 0);
+      /* Being a wavelength people actually dial in is worth a few per cent of
+       * score, no more. As a sort key rather than a tolerance band, so the
+       * ordering is a real ordering: 920 nm beats 930 nm for eGFP + tdTomato on
+       * two beams, where the old within-2% test missed it by a third of a per
+       * cent and handed back 930. */
+      r.rank = r.obj * (1 + NICE_BONUS * (tunables ? r.nice / (3 * tunables) : 0));
       cands.push(r);
     });
-    if (!cands.length) cands.push(Object.assign(evalVec(best.wls), { rel: 1, nice: 0 }));
+    if (!cands.length) {
+      cands.push(Object.assign(evalVec(best.wls), { rel: 1, nice: 0, rank: best.obj }));
+    }
 
     cands.sort(function (a, b) {
-      // within 2% treat as equivalent and prefer the conventional / rounder one
-      if (Math.abs(a.rel - b.rel) < 0.02) {
-        if (a.clears && b.clears) return b.wl - a.wl || b.nice - a.nice;
-        return b.nice - a.nice || b.tot - a.tot || b.obj - a.obj;
-      }
-      return b.obj - a.obj;
+      // with every dye already over its floor, score says nothing: go long
+      if (a.clears && b.clears) return b.wl - a.wl || b.nice - a.nice;
+      return b.rank - a.rank || b.tot - a.tot;
     });
 
     var top = cands[0];
@@ -485,6 +545,8 @@
       range: [lo, hi],
       minWl: minWl,
       mode: mode,
+      cap: cap,             // a lone beam is not sent past this, for anatomy
+      beyond: beyond,       // the best the cap ruled out, so it can be explained
       absolute: absolute,   // scored in GM rather than "% of own peak"
       gmScale: gmScale,
       evalVec: evalVec,     // so the page can score a dragged marker the same way

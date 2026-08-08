@@ -372,6 +372,21 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .bar-label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; min-width: 0; }
 .bar-label i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .bar-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Laser on/off. Reads as a state, and clicks like a switch. */
+.laser-sw {
+  flex: none; font: 600 10.5px/1 var(--font); letter-spacing: .06em;
+  padding: 5px 8px; border-radius: 6px; border: 1px solid transparent;
+  cursor: pointer; background: var(--surface-sunk);
+}
+.laser-sw.is-on { color: #1a7f42; background: rgba(26, 127, 66, 0.12); }
+.laser-sw.is-off { color: var(--danger); background: var(--danger-soft); }
+.laser-sw.is-spare { color: var(--warn); background: var(--warn-soft); }
+.laser-sw:hover { border-color: currentColor; }
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .laser-sw.is-on { color: #58c98a; }
+}
+:root[data-theme="dark"] .laser-sw.is-on { color: #58c98a; }
+
 .bar-flag {
   flex: none; font-style: normal; font-size: 10.5px; letter-spacing: .02em;
   padding: 1px 6px; border-radius: 9px; color: var(--text-secondary);

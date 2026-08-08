@@ -195,6 +195,7 @@ CURATED = [
     ("morange2",     "mOrange2",        "mOrange2",        "orange",  False),
     ("mko2",         "mKO2",            "mKO2",            "orange",  False),
     ("tdtomato",     "tdTomato",        "tdTomato",        "orange",  True),
+    ("dtomato",      "dTomato",         "dTomato",         "orange",  True),
     ("dsred2",       "DsRed2",          "DsRed2",          "red",     True),
     ("mruby2",       "mRuby2",          "mRuby2",          "red",     False),
     ("mscarlet",     "mScarlet",        "mScarlet",        "red",     False),
@@ -274,6 +275,11 @@ MEASURED_2P_WL = [760, 780, 820, 850, 920]
 # is where these dyes are imaged in practice, even though DiI is nearly four
 # times brighter at 760 nm.
 SUFFICIENT_COUNTS = 300.0
+
+# dTomato relative to tdTomato. The tandem dimer is two copies of the same
+# chromophore on one polypeptide, so it absorbs twice as much for the same
+# number of molecules. Half is the honest first guess, not a measurement.
+DTOMATO_FRACTION = 0.5
 
 # BrainSaw-1, from the SWC wiki. `role` drives how it is drawn.
 # Channels are defined by their bandpass alone. The dichroics that route light to
@@ -558,6 +564,14 @@ def build():
         if slug in local2p["Z"]:
             add_2p(rec, "Z", local2p["Z"][slug], absolute=True)
 
+        # dTomato has no published two-photon spectrum. tdTomato is two dTomato
+        # units linked head to tail, so it has the same absorption band and about
+        # twice the cross-section: the shape is tdTomato's and the scale is half.
+        # An estimate, and labelled as one - source "E", never "D".
+        if slug == "dtomato" and local2p["D"].get("tdtomato"):
+            add_2p(rec, "E", [(x, y * DTOMATO_FRACTION)
+                              for x, y in local2p["D"]["tdtomato"]], absolute=True)
+
         if not rec["twop"]:
             # Some FPbase "2P" curves do not actually cover the two-photon range
             # (Venus's spans 300-700 nm), so they vanish once the data is clipped.
@@ -658,6 +672,11 @@ def build():
             "Z": {"label": "Zipfel", "units": "GM",
                   "url": "https://www.drbio.cornell.edu/cross_sections.html",
                   "note": "Absolute 2p action cross sections, Zipfel lab, Cornell."},
+            "E": {"label": "Estimated", "units": "GM",
+                  "url": None,
+                  "note": "Derived rather than measured. dTomato is tdTomato's curve at "
+                          "half the cross-section, because the tandem dimer carries two "
+                          "copies of the same chromophore."},
             "M": {"label": "Measured at SWC", "units": "arbitrary",
                   "url": None,
                   "note": "Two-photon excitation measured on BrainSaw for dyes with no "
