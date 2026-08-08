@@ -109,14 +109,19 @@ BakingTray `SETTINGS` directory and it opens the browser on that rig.
 
 ## Deploying
 
-Copy this directory into the GitHub Pages site and embed it. Because it is a
-self-contained app rather than a content block, an iframe keeps it clear of the
-site's own CSS:
+Copy this directory into the GitHub Pages site at `/channel-chooser/` and link
+straight to it. **It is a page, not a content block, and it is not embedded.**
 
-```html
-<iframe src="/two-photon-chooser/" style="width:100%;height:90vh;border:0"
-        title="Two-photon spectra and wavelength chooser"></iframe>
-```
+It assumes it owns the viewport: the topbar is `position: sticky; top: 0`, the
+rail sticks under it and scrolls on its own, and the layout is a 328 px rail
+beside the charts that collapses to a single column below 1080 px. Dropped into
+an article column it would sit permanently in the narrow layout, with the
+fluorophore list, channels and lasers hidden behind a button. Framed, it would
+work, but only same-origin — a cross-origin frame gets partitioned
+`localStorage` in Safari and Chrome, and saved rigs would quietly disappear
+between visits. Its own URL avoids all of that, and is needed anyway: `Share`
+copies `location.href`, and BakingTray's `#cfg=` handoff has to have somewhere
+to open. `matlab/channelChooserURL.m` points at this path.
 
 ## Rebuilding the data
 

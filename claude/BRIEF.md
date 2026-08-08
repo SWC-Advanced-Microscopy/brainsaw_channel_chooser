@@ -232,9 +232,10 @@ These came up repeatedly and are worth stating as rules:
 
 Self-contained static site, destined for
 <https://github.com/SWC-Advanced-Microscopy/brainsaw_channel_chooser>, to be
-embedded in the GitHub Pages site alongside the existing 2p-cross-section page.
-Standalone and iframe-embeddable, so it is not at the mercy of the host site's
-CSS.
+served from the GitHub Pages site alongside the existing 2p-cross-section page.
+A page of its own that is linked to, not embedded: it is an application shell
+that assumes it owns the viewport, and its own URL is what keeps saved rigs and
+the BakingTray handoff working. See "Deploying" in the README.
 
 Data is emitted as both `.json` and `.js`, and the page loads the `.js` variants
 via plain `<script>` tags, so **it works straight off the filesystem** — the
