@@ -1,0 +1,5 @@
+# Downloaded spectra cache for build/fetch_data.py. Regenerated on demand;
+# not worth committing (~7 MB of raw FPbase responses).
+build/.cache/
+
+.DS_Store

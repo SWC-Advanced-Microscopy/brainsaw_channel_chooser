@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Two-photon spectra &amp; wavelength chooser — SWC Advanced Microscopy</title>
+<meta name="description" content="Overlay two-photon excitation and emission spectra on your microscope's filter set, and get a suggested excitation wavelength.">
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔬</text></svg>">
+</head>
+<body>
+
+<a class="skip" href="#excitation-panel">Skip to charts</a>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span>
+      <strong>Two-photon spectra</strong>
+      <em>&amp; wavelength chooser</em>
+    </span>
+  </div>
+
+  <div class="topbar-controls">
+    <label class="field">
+      <span>Microscope</span>
+      <select id="scope-select"></select>
+    </label>
+    <label class="field">
+      <span>Laser</span>
+      <select id="laser-select"></select>
+    </label>
+    <button class="btn ghost" id="btn-share" title="Copy a link that restores this exact setup">Share</button>
+    <button class="btn ghost icon" id="btn-theme" title="Switch light / dark" aria-label="Switch light / dark">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3v2m0 14v2m9-9h-2M5 12H3m14.5-6.5-1.4 1.4M7.9 16.1l-1.4 1.4m11 0-1.4-1.4M7.9 7.9 6.5 6.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+    </button>
+    <button class="btn ghost only-narrow" id="btn-rail" aria-expanded="false" aria-controls="rail">Fluorophores</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ------------------------------------------------------- control rail -->
+  <aside class="rail" id="rail" aria-label="Fluorophore and hardware controls">
+
+    <section class="rail-block">
+      <h2>Fluorophores</h2>
+      <div class="search-wrap">
+        <input type="search" id="fluor-search" placeholder="Search fluorophores…" autocomplete="off" aria-label="Search fluorophores">
+      </div>
+      <label class="check compact">
+        <input type="checkbox" id="common-only" checked>
+        <span>Show common only</span>
+      </label>
+      <div class="chips" id="family-filters" role="group" aria-label="Filter by emission colour"></div>
+      <ul class="fluor-list" id="fluor-list" role="listbox" aria-multiselectable="true"></ul>
+      <p class="rail-note" id="fluor-count"></p>
+    </section>
+
+    <section class="rail-block">
+      <h2>Selected <span class="pill" id="selected-count">0</span></h2>
+      <ul class="selected-list" id="selected-list"></ul>
+      <p class="rail-note empty" id="selected-empty">
+        Nothing selected. Pick a fluorophore above, or
+        <button class="linklike" id="btn-example">load an example</button>.
+      </p>
+    </section>
+
+    <section class="rail-block">
+      <h2>Two-photon data source</h2>
+      <div class="seg" id="source-pref" role="radiogroup" aria-label="Preferred two-photon data source">
+        <button role="radio" data-src="D" aria-checked="true">Drobizhev</button>
+        <button role="radio" data-src="Z" aria-checked="false">Zipfel</button>
+        <button role="radio" data-src="F" aria-checked="false">FPbase</button>
+      </div>
+      <p class="rail-note">
+        Default preference when a fluorophore has more than one curve. Each selected
+        fluorophore can be overridden individually.
+      </p>
+    </section>
+
+    <section class="rail-block">
+      <h2>Detection channels</h2>
+      <ul class="channel-list" id="channel-list"></ul>
+      <div class="row-actions">
+        <button class="btn small" id="btn-add-channel">Add channel</button>
+        <button class="btn small ghost" id="btn-reset-scope">Reset to preset</button>
+      </div>
+      <p class="rail-note">
+        Channels are modelled from their bandpass filters. The dichroics that route
+        light to them only trim edges these filters already define.
+      </p>
+    </section>
+
+    <section class="rail-block">
+      <h2>Recommender settings</h2>
+      <label class="field block">
+        <span>Objective</span>
+        <select id="objective-select">
+          <option value="balanced">Balanced — best worst-case fluorophore</option>
+          <option value="total">Total — best average signal</option>
+        </select>
+      </label>
+      <label class="field block">
+        <span>Penalty above 950 nm <b id="ctx-value">100%</b></span>
+        <input type="range" id="ctx-strength" min="0" max="100" value="100">
+      </label>
+      <p class="rail-note">
+        Discourages long wavelengths, where there is little background signal to give
+        anatomical context for registering sections.
+      </p>
+      <label class="field block" style="margin-top:12px">
+        <span>Shortest wavelength you will use</span>
+        <input type="number" id="min-wl" min="680" max="1000" step="10" value="760">
+      </label>
+      <p class="rail-note">
+        Nothing shorter is ever suggested. Below about 760 nm the laser is less stable
+        and the embedding agar autofluoresces heavily, so the extra cross-section is
+        not worth having.
+      </p>
+    </section>
+  </aside>
+
+  <!-- ------------------------------------------------------------- panels -->
+  <main class="panels">
+
+    <section class="card hero" id="recommendation" aria-live="polite">
+      <div class="hero-empty" id="hero-empty">
+        <h2>Pick your fluorophores</h2>
+        <p>
+          Select what you are imaging and this will overlay the two-photon excitation
+          spectra, show where the emission lands in your filter set, and suggest a
+          wavelength to tune to.
+        </p>
+      </div>
+      <div class="hero-body" id="hero-body" hidden>
+        <div class="hero-main">
+          <p class="hero-kicker">Suggested excitation wavelength</p>
+          <p class="hero-number"><span id="hero-wl">—</span><span class="unit">nm</span></p>
+          <p class="hero-sub" id="hero-sub"></p>
+        </div>
+        <div class="hero-bars" id="hero-bars"></div>
+      </div>
+      <div class="hero-alts-row" id="hero-alts-row" hidden>
+        <span class="hero-alts-label">Try instead</span>
+        <div class="hero-alts" id="hero-alts"></div>
+      </div>
+      <ul class="advice" id="advice"></ul>
+    </section>
+
+    <section class="card" id="excitation-panel">
+      <div class="card-head">
+        <div>
+          <h2>Two-photon excitation</h2>
+          <p class="card-sub" id="exc-sub">Action cross-section vs excitation wavelength</p>
+        </div>
+        <div class="card-tools">
+          <div class="seg small" id="exc-units" role="radiogroup" aria-label="Excitation y-axis units">
+            <button role="radio" data-unit="norm" aria-checked="true">Relative</button>
+            <button role="radio" data-unit="gm" aria-checked="false">GM</button>
+          </div>
+          <label class="check inline"><input type="checkbox" id="show-laser" checked><span>Laser power</span></label>
+          <label class="check inline"><input type="checkbox" id="show-score" checked><span>Suitability</span></label>
+          <button class="btn small ghost" data-reset-zoom="exc" hidden>Reset zoom</button>
+          <button class="btn small ghost icon" data-png="exc" title="Download PNG" aria-label="Download excitation chart as PNG">
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 18h14" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="chart-host" id="chart-exc"></div>
+      <p class="card-foot" id="exc-foot"></p>
+    </section>
+
+    <section class="card" id="emission-panel">
+      <div class="card-head">
+        <div>
+          <h2>Emission &amp; filters</h2>
+          <p class="card-sub">Emission spectra over your detection channels</p>
+        </div>
+        <div class="card-tools">
+          <label class="check inline"><input type="checkbox" id="show-filters" checked><span>Filters</span></label>
+          <button class="btn small ghost" data-reset-zoom="em" hidden>Reset zoom</button>
+          <button class="btn small ghost icon" data-png="em" title="Download PNG" aria-label="Download emission chart as PNG">
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 18h14" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="chart-host" id="chart-em"></div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <section class="card" id="acquire-panel">
+      <div class="card-head">
+        <div>
+          <h2>Channels to acquire</h2>
+          <p class="card-sub wide">
+            Which detectors to record, and which one gives you the anatomical background to register sections against.
+          </p>
+        </div>
+      </div>
+      <ul class="acquire-warnings" id="acquire-warnings"></ul>
+      <ul class="acquire-list" id="acquire-list"></ul>
+      <p class="card-foot" id="acquire-note"></p>
+    </section>
+
+    <section class="card" id="channels-panel">
+      <div class="card-head">
+        <div>
+          <h2>Channel assignment</h2>
+          <p class="card-sub">
+            Fraction of each fluorophore's detected emission landing in each channel.
+            Rows sum to 100%; the capture column is the share of all emitted photons
+            the filter set collects at all.
+          </p>
+        </div>
+        <div class="card-tools">
+          <button class="btn small ghost" id="btn-csv">Download CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="matrix" id="matrix"></table>
+      </div>
+    </section>
+
+    <section class="card" id="data-panel">
+      <div class="card-head">
+        <div>
+          <h2>Data &amp; provenance</h2>
+          <p class="card-sub">Every curve on this page, and where it came from</p>
+        </div>
+        <div class="card-tools">
+          <button class="btn small ghost" id="btn-toggle-prov" aria-expanded="false"
+                  aria-controls="data-body">Show</button>
+        </div>
+      </div>
+      <div id="data-body" hidden>
+        <div id="provenance"></div>
+        <div class="table-wrap">
+          <p class="card-sub" style="padding:0 0 8px">
+            Two-photon excitation values at 10 nm steps — the numbers behind the chart.
+          </p>
+          <table class="matrix" id="data-table"></table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="page-foot">
+      <p>
+        Built for <a href="https://swcmicroscopy.com/" rel="noopener">SWC Advanced Microscopy</a>.
+        Spectra from <a href="https://www.fpbase.org" rel="noopener">FPbase</a> (CC-BY-SA),
+        Drobizhev <em>et al.</em> 2011 and the Zipfel lab at Cornell.
+        Filter curves via FPbase.
+      </p>
+    </footer>
+  </main>
+</div>
+
+<!-- ------------------------------------------------------ filter picker -->
+<dialog class="picker" id="filter-picker">
+  <form method="dialog" class="picker-head">
+    <div>
+      <h2 id="picker-title">Choose a filter</h2>
+      <p class="card-sub">Searching the full FPbase filter library</p>
+    </div>
+    <button class="btn ghost icon" value="cancel" aria-label="Close">✕</button>
+  </form>
+  <div class="picker-controls">
+    <input type="search" id="picker-search" placeholder="Part number or name, e.g. 525/50 or Semrock" autocomplete="off">
+    <select id="picker-type">
+      <option value="">All types</option>
+      <option value="BP">Bandpass</option>
+      <option value="BM">Emission</option>
+      <option value="BX">Excitation</option>
+      <option value="LP">Longpass</option>
+      <option value="SP">Shortpass</option>
+      <option value="BS">Dichroic / beamsplitter</option>
+    </select>
+    <select id="picker-vendor"><option value="">All vendors</option></select>
+  </div>
+  <ul class="picker-list" id="picker-list"></ul>
+  <p class="picker-note" id="picker-note"></p>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="data/core.js"></script>
+<script src="data/filter-index.js"></script>
+<script src="js/curves.js"></script>
+<script src="js/chart.js"></script>
+<script src="js/optics.js"></script>
+<script src="js/advice.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
