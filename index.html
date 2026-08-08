@@ -100,8 +100,9 @@
       </div>
       <label class="field block" id="laser-mode-wrap" hidden>
         <span>With more than one laser</span>
+        <!-- kept in step with LASER_MODES in app.js; running one laser is not a
+             mode here, it is the other one switched off in the list above -->
         <select id="laser-mode">
-          <option value="single">One at a time</option>
           <option value="simultaneous">All on together</option>
           <option value="sequential">One pass per laser</option>
         </select>
@@ -269,7 +270,7 @@
 
     <footer class="page-foot">
       <p>
-        Built for <a href="https://swcmicroscopy.com/" rel="noopener">SWC Advanced Microscopy</a>.
+        <a href="https://swcmicroscopy.com/" rel="noopener">SWC Advanced Microscopy</a>.
         Spectra from <a href="https://www.fpbase.org" rel="noopener">FPbase</a> (CC-BY-SA),
         Drobizhev <em>et al.</em> 2011 and the Zipfel lab at Cornell.
         Filter curves via FPbase.
