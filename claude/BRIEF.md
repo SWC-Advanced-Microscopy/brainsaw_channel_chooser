@@ -390,3 +390,20 @@ and in two-pass mode names which fluorophore belongs to which.
 to the server, so the rig never leaves the machine.
 `matlab/channelChooserURL.m` is the reference encoder — its real job is to pin
 the format so the two ends cannot drift.
+
+
+## Dealing with the tracer dyes
+You could not find 2p spectra for the tracer dyes. I have recorded them. 
+These are are mean signal values in the best detector channel for that dye. 
+So units are NOT GM but arbitrary. That said, these dyes are very bright indeed. 
+I had to use low PMT gains to avoid saturation.  
+So I would consider the values below about 300 to be "low" and below about 1000 to be "medium" bright. 
+Other than that we should be good. So I know, for example, that DiI looks great in tissue in real experiments at 920 nm. 
+So we infer from that that 780 should also be good. 
+
+You can take the data below and use them to add 2p excitation curves to integrate into your library of fluorophores. 
+
+wavelength_nm         760      780      820     850     920
+DiI               10302.0   1990.0    262.0   264.0  2880.0
+DiD               25645.0  28828.0  24535.0  5883.0   782.0
+DiO                  59.0    143.0    246.0   715.0  4032.0

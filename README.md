@@ -154,6 +154,7 @@ microscope and its channels.
 | 2p spectra, "D" | Drobizhev *et al.* 2011, [doi:10.1038/nmeth.1596](https://doi.org/10.1038/nmeth.1596) | absolute (GM) |
 | 2p spectra, "Z" | [Zipfel lab, Cornell](https://www.drbio.cornell.edu/cross_sections.html) | absolute (GM) |
 | 2p spectra, "F" | [FPbase](https://www.fpbase.org) | relative |
+| 2p spectra, "M" | measured on BrainSaw at SWC | arbitrary |
 | 1p excitation / emission | FPbase | normalised |
 | Filter transmission | FPbase filter library | fraction transmitted |
 
@@ -161,12 +162,44 @@ Chroma's spectra viewer was checked as a two-photon source and does not have
 one — its open API exposes 203 fluorochromes and 913 dyes, none with 2p data. The
 FPbase 2P collection (99 spectra, largely Drobizhev-derived) is used instead.
 
-FPbase has no `tdStayGold` entry, so the parent **StayGold** is used. StayGold,
-DiO, DiI, DiD and Venus have no usable two-photon spectrum — Venus's FPbase "2P"
-curve actually spans 300–700 nm, so it disappears once the data is clipped. All
-five are drawn on the emission chart and counted in the channel maths, but sit out
-of the wavelength recommendation, and the UI says so. Anything with an emission
-spectrum is kept this way rather than dropped silently.
+FPbase has no `tdStayGold` entry, so the parent **StayGold** is used. StayGold and
+Venus have no usable two-photon spectrum — Venus's FPbase "2P" curve actually
+spans 300–700 nm, so it disappears once the data is clipped. Both are drawn on the
+emission chart and counted in the channel maths, but sit out of the wavelength
+recommendation, and the UI says so. Anything with an emission spectrum is kept
+this way rather than dropped silently.
+
+### The tracer dyes
+
+Nobody has published two-photon spectra for DiI, DiO and DiD, so they were
+measured on BrainSaw: mean signal in each dye's best detector channel at 760,
+780, 820, 850 and 920 nm. That makes the "M" numbers detector counts, not cross
+sections — the shape of one dye's curve is meaningful, the height against another
+dye's is not, and they are never mixed into a GM comparison. The measurements are
+stored as the five points and interpolated linearly between them; the chart draws
+a dot at each one so the straight runs are not mistaken for data. Outside
+760–920 nm the curve reads zero, so the recommender will not send you to a
+wavelength these dyes were never tested at.
+
+All three are bright enough that the PMT gain had to be turned down to avoid
+saturating, which is why the raw counts run into the tens of thousands.
+
+**They are also scored differently from everything else.** For a fluorescent
+protein the question is where the cross-section is largest. For these dyes it is
+not: past a workable signal, more excitation buys nothing and DiI driven hard
+bleeds into every channel. So a tracer's score climbs to 1 at 300 counts — the
+line below which the measurements call a dye dim — and stays flat above it. That
+turns the answer into a plateau rather than a peak, and the tie is broken by
+taking the **longest** wavelength that still clears the floor: excitation is more
+even with depth, and the green channel keeps enough background to register
+sections against. Each tracer alone, and all three together, land on 920 nm,
+which is where they are imaged in practice.
+
+The hero bars still show each dye as a share of its own peak, with a *bright
+enough* / *may be dim* flag beside it — DiD reads 3% at 920 nm and is perfectly
+usable there. Where the short end is dramatically brighter (DiI is 3.6× brighter
+at 760 nm, DiD 37× at 780 nm) the advice says so, framed as the answer to weak
+labelling rather than as a recommendation.
 
 Two things on the page are **not** measured data and are labelled as such:
 

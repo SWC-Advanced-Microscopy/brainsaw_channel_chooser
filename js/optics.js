@@ -330,11 +330,21 @@
         return Math.max(m, s.gmCurve.peak(700, 1320).y);
       }, 0) || 1;
     }
+    /* The tracers are the exception to all of this. They are bright enough that
+     * the gain has to come down to stop them saturating, and DiI bleeds into
+     * every channel when it is driven hard, so "brightest" is the wrong target -
+     * "clears the bar" is. Their score therefore rises to 1 at the sufficiency
+     * level and stays there, which frees the wavelength to be chosen on other
+     * grounds: 920 nm excites more evenly with depth and leaves enough green
+     * background to register sections against, so a saturated tie goes long.
+     * s.sat is the sufficiency level in the curve's own units. */
     var sigma = function (s, wl) {
+      if (s.sat) return Math.min(1, Math.max(0, s.twopCurve.at(wl)) / s.sat);
       return absolute
         ? Math.max(0, s.gmCurve.at(wl)) / gmScale
         : Math.max(0, s.twopCurve.at(wl));
     };
+    var allSaturating = usable.every(function (s) { return s.sat; });
 
     /* One wavelength vector, one row of numbers. */
     function evalVec(wls) {
@@ -347,6 +357,7 @@
       var cw = contextWeight(isFinite(ctxWl) ? ctxWl : CTX_FULL, ctxStrength);
 
       var from = [];                       // sequential: which pass each fluor uses
+      var clears = allSaturating;          // every dye already bright enough here
       var per = usable.map(function (s) {
         var v = 0, pick = 0;
         for (var i = 0; i < lasers.length; i++) {
@@ -358,6 +369,7 @@
           }
         }
         from.push(pick);
+        if (v < 0.999) clears = false;
         return v * cw;
       });
 
@@ -372,6 +384,7 @@
       var tot = per.reduce(function (a, b) { return a + b; }, 0);
       return {
         wls: wls, wl: wls[active], obj: obj, tot: tot, per: per, ctx: cw, from: from,
+        clears: clears,
         power: aL._curve ? aL._curve.at(wls[active]) : 1,
         mw: sampleMw(aL, wls[active]),
         beams: lasers.map(function (l, i) {
@@ -385,11 +398,15 @@
     var best = null;
     fine.forEach(function (v) {
       var r = evalVec(v);
+      if (!best || r.obj > best.obj * 1.0001) { best = r; return; }
+      if (r.obj <= best.obj * 0.9999) return;
+      // Every dye already over the bar both ways: nothing is bought by going
+      // brighter, so take the longer wavelength.
+      if (r.clears && best.clears) { if (r.wl > best.wl) best = r; return; }
       // ties on the worst case are broken by total signal: if eGFP is the
       // limiting fluorophore either way, take the option that also gives
       // tdTomato more rather than the first one found
-      if (!best || r.obj > best.obj * 1.0001 ||
-          (r.obj > best.obj * 0.9999 && r.tot > best.tot)) best = r;
+      if (r.tot > best.tot) best = r;
     });
     if (!best || best.obj <= 0) {
       return {
@@ -423,7 +440,10 @@
 
     cands.sort(function (a, b) {
       // within 2% treat as equivalent and prefer the conventional / rounder one
-      if (Math.abs(a.rel - b.rel) < 0.02) return b.nice - a.nice || b.tot - a.tot || b.obj - a.obj;
+      if (Math.abs(a.rel - b.rel) < 0.02) {
+        if (a.clears && b.clears) return b.wl - a.wl || b.nice - a.nice;
+        return b.nice - a.nice || b.tot - a.tot || b.obj - a.obj;
+      }
       return b.obj - a.obj;
     });
 

@@ -217,9 +217,11 @@ CURATED = [
     ("rgeco1",       "R-GECO1",         "R-GECO1",         "sensor",  False),
 ]
 
-# Entries with a one-photon emission spectrum but no published two-photon curve.
-# They still plot on the emission chart and take part in the channel maths; the
-# recommender leaves them out and the UI says so.
+# Entries whose one-photon spectra come from FPbase. Most have no published
+# two-photon curve at all: they still plot on the emission chart and take part in
+# the channel maths, but the recommender leaves them out and the UI says so. The
+# tracers are the exception - their 2p excitation is measured here, see
+# MEASURED_2P below.
 #
 # FPbase has no tdStayGold entry - StayGold, StayGold-E138D, mStayGold and
 # mStayGold2 only - so the parent StayGold is used here.
@@ -234,6 +236,44 @@ ONE_PHOTON_ONLY = [
     ("did",        "DiD",        "DiD",       "tracer",  "dye",     True),
     ("staygold",   "StayGold",   "StayGold",  "green",   "protein", False),
 ]
+
+# Two-photon excitation for the lipophilic tracers, measured on BrainSaw at SWC
+# because nobody has published curves for them.
+#
+# Each number is the mean signal in the dye's best detector channel, so the units
+# are arbitrary - detector counts, not GM - and only ratios within one dye mean
+# anything. They are not comparable between dyes and never scored against GM
+# data. All three are bright enough that the PMT gain had to be turned down:
+# below ~300 counts is dim, below ~1000 is moderate, above that is plenty.
+#
+# Five wavelengths, and the shapes are not smooth (DiI drops by a factor of forty
+# between 760 and 820 nm, then climbs again), so the curve is stored as the
+# measured points and linearly interpolated between them. Nothing is invented
+# outside 760-920 nm: the sampler returns zero there, so the recommender will not
+# propose a wavelength these dyes were never tested at.
+MEASURED_2P = {
+    #        760      780      820     850     920
+    "dii": [10302.0,  1990.0,   262.0,  264.0, 2880.0],
+    "did": [25645.0, 28828.0, 24535.0, 5883.0,  782.0],
+    "dio": [   59.0,   143.0,   246.0,  715.0, 4032.0],
+}
+MEASURED_2P_WL = [760, 780, 820, 850, 920]
+
+# The line below which one of these dyes counts as dim. Below about 300 counts
+# the signal is low and below about 1000 it is moderate, so 300 is where a dye
+# stops being a problem rather than where it becomes impressive.
+#
+# It is a floor, not a target, and that is the whole point of treating the
+# tracers as a special case. The question for them is not "where is this dye
+# brightest" but "where is it not dim", because past a workable signal more
+# excitation buys nothing - DiI driven hard bleeds into every channel. Once a
+# wavelength clears the floor it is as good as any other, so the choice is made
+# on other grounds and the longest clearing wavelength wins: excitation is more
+# even with depth and the green channel keeps enough background to register
+# sections against. For a decently coated electrode that lands on 920 nm, which
+# is where these dyes are imaged in practice, even though DiI is nearly four
+# times brighter at 760 nm.
+SUFFICIENT_COUNTS = 300.0
 
 # BrainSaw-1, from the SWC wiki. `role` drives how it is drawn.
 # Channels are defined by their bandpass alone. The dichroics that route light to
@@ -554,8 +594,17 @@ def build():
 
     for slug, label, fpname, family, kind, common in ONE_PHOTON_ONLY:
         rec = {"id": slug, "name": label, "family": family, "fpbase": fpname,
-               "common": common, "twop": {}, "noTwoP": True,
+               "common": common, "twop": {},
                "dye": kind == "dye"}
+        if slug in MEASURED_2P:
+            counts = MEASURED_2P[slug]
+            add_2p(rec, "M", list(zip(MEASURED_2P_WL, counts)), absolute=False)
+            # The curve is stored normalised to its own peak, so express the
+            # "bright enough" level in the same units.
+            rec["twop"]["M"]["sufficient"] = round(
+                SUFFICIENT_COUNTS / max(counts), 4)
+        else:
+            rec["noTwoP"] = True
         if kind == "protein":
             add_1p(rec, fpname)
         for sub, key in (("EX", "ex"), ("EM", "em")):
@@ -609,6 +658,12 @@ def build():
             "Z": {"label": "Zipfel", "units": "GM",
                   "url": "https://www.drbio.cornell.edu/cross_sections.html",
                   "note": "Absolute 2p action cross sections, Zipfel lab, Cornell."},
+            "M": {"label": "Measured at SWC", "units": "arbitrary",
+                  "url": None,
+                  "note": "Two-photon excitation measured on BrainSaw for dyes with no "
+                          "published curve. Detector signal at five wavelengths between "
+                          "760 and 920 nm: shape only, in arbitrary units, not "
+                          "comparable between dyes and not a cross section."},
         },
     }
     stamp = core["generated"]
@@ -669,6 +724,10 @@ def add_2p(rec, key, points, absolute):
     if absolute:
         entry["gm"] = pack(points, TWOP_LO, TWOP_HI, 3)
         entry["peakGm"] = round(peak, 3)
+    # A handful of samples rather than a spectrum. The chart marks where they
+    # were taken so the straight lines between them do not read as measurements.
+    if len(points) <= 12:
+        entry["sparse"] = True
     if entry["curve"]:
         rec["twop"][key] = entry
 

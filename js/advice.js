@@ -110,6 +110,58 @@
         'your selection is excited there.' });
     }
 
+    /* --- the tracers -------------------------------------------------------
+     *
+     * Scored on sufficiency rather than brightness, so the headline number can
+     * sit a long way off a dye's own peak and still be the right answer. Say so,
+     * because the bar for DiD at 910 nm reads 5% and that looks like a mistake
+     * until you know the bar is a share of its own peak, not of what you need.
+     *
+     * The escape hatch matters too: sufficiency assumes a decently coated
+     * electrode. If the labelling is thin, the short end really is brighter. */
+    var tracers = usable.filter(function (s) { return s.sat; });
+    if (tracers.length) {
+      var level = function (s) {
+        var v = 0;
+        (best.beams || []).forEach(function (b) {
+          if (!b.pw) return;
+          var t = s.twopCurve.at(b.wl) * b.pw;
+          v = ctx.laserMode === 'sequential' ? Math.max(v, t) : v + t;
+        });
+        return v / s.sat;
+      };
+      var ample = tracers.filter(function (s) { return level(s) >= 1; });
+      var thin = tracers.filter(function (s) { return level(s) < 1; });
+
+      if (ample.length) {
+        items.push({ kind: 'info', text:
+          list(ample.map(name)) + ' ' + (ample.length > 1 ? 'are' : 'is') + ' judged on being ' +
+          'bright enough rather than brightest: past a workable signal these dyes only bleed ' +
+          'into neighbouring channels. ' + (ample.length > 1 ? 'They clear' : 'It clears') +
+          ' that at ' + best.wl + ' nm, which is the better place to sit anyway — excitation ' +
+          'is more even with depth and the green channel keeps enough background to register ' +
+          'sections against.' });
+      }
+      if (thin.length) {
+        items.push({ kind: 'warn', text:
+          list(thin.map(name)) + ' ' + (thin.length > 1 ? 'are' : 'is') + ' below the signal ' +
+          'these dyes usually give at ' + best.wl + ' nm. Fine if the labelling is heavy, ' +
+          'thin if it is not.' });
+      }
+      // Where the short end is dramatically brighter, offer it as the answer to
+      // weak labelling rather than as a recommendation.
+      ample.forEach(function (s) {
+        var pk = s.twopPeak;
+        if (pk == null || Math.abs(pk - best.wl) < 30) return;
+        var gain = s.twopCurve.at(pk) / (s.twopCurve.at(best.wl) || 1);
+        if (gain < 1.5) return;
+        items.push({ kind: 'info', text:
+          'If your ' + name(s) + ' turns out faint — a thin coat on the electrode, say — ' +
+          pk + ' nm is about ' + gain.toFixed(1) + '× brighter. Only worth moving there ' +
+          'for that reason.' });
+      });
+    }
+
     /* --- alternatives ------------------------------------------------------ */
     (anyTunable ? rec.candidates : []).filter(function (c) {
       return c.wl !== best.wl;
@@ -262,6 +314,8 @@
     var meta = src && window.SV_CORE && window.SV_CORE.sources[src];
     return meta ? meta.label : 'measured';
   }
+
+  function name(s) { return s.fluor.name; }
 
   function list(names) {
     if (!names.length) return 'nothing';

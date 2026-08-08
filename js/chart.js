@@ -269,6 +269,22 @@
         ctx.stroke();
         ctx.restore();
       }
+
+      /* Where a curve is a few measured samples rather than a spectrum, show
+       * the samples: the straight runs between them are drawn, not measured. */
+      if (phase === 'line' && s.points) {
+        ctx.save();
+        ctx.globalAlpha = dim;
+        ctx.fillStyle = s.color;
+        for (var p = 0; p < s.points.length; p++) {
+          var px = this.sx(s.points[p][0]), py = this.sy(s.points[p][1]);
+          if (px < r.x || px > r.x + r.w) continue;
+          ctx.beginPath();
+          ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
     }
   };
 

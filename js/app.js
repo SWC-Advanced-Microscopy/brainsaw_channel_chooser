@@ -288,13 +288,27 @@
   function clamp(v, a, b) { return Math.min(Math.max(v, a), b); }
   function pct(v, dp) { return (v * 100).toFixed(dp == null ? 0 : dp) + '%'; }
 
+  /* Some curves are a handful of measured points rather than a spectrum. Say so
+   * under the chart, with the range they cover: outside it the curve reads zero,
+   * so the recommender will never send you somewhere the dye was not tested. */
+  function sparseNote(sel) {
+    var sp = sel.filter(function (s) { return s.sparse && s.twopCurve; });
+    if (!sp.length) return '';
+    var lo = Math.min.apply(null, sp.map(function (s) { return s.twopCurve.x0; }));
+    var hi = Math.max.apply(null, sp.map(function (s) { return s.twopCurve.x1; }));
+    var names = sp.map(function (s) { return SV.escapeHtml(s.fluor.name); }).join(', ');
+    return ' ' + names + ': measured on BrainSaw at a few wavelengths between ' +
+      Math.round(lo) + ' and ' + Math.round(hi) + ' nm, in arbitrary units. Dots are ' +
+      'the measurements, the lines between them are interpolation.';
+  }
+
   /* Which 2p source to use for a selection entry, honouring the override. */
   function sourceFor(entry) {
     var f = byId[entry.id];
     if (!f) return null;
     if (entry.source && f.twop[entry.source]) return entry.source;
     if (f.twop[state.sourcePref]) return state.sourcePref;
-    return ['D', 'Z', 'F'].filter(function (k) { return f.twop[k]; })[0] || null;
+    return ['D', 'Z', 'M', 'F'].filter(function (k) { return f.twop[k]; })[0] || null;
   }
 
   /* GM is more informative than "% of own peak", so use it whenever every
@@ -317,6 +331,8 @@
         gmCurve: t ? t._gm : null,
         twopPeak: t ? t.peakWl : null,
         peakGm: t ? t.peakGm : null,
+        sparse: !!(t && t.sparse),
+        sat: (t && t.sufficient) || null,   // "bright enough" level, tracers only
         color: fluorColor(f),
         weight: 1,
       };
@@ -389,7 +405,7 @@
         '<span class="fluor-swatch" style="background:' + fluorColor(f) + '"></span>' +
         '<span class="fluor-name">' + SV.escapeHtml(f.name) + '</span>' +
         '<span class="fluor-meta">' + (peak ? Math.round(peak) + ' nm' : 'no 2p') + '</span>' +
-        '<span class="src-tags">' + ['D', 'Z', 'F'].map(function (k) {
+        '<span class="src-tags">' + ['D', 'Z', 'M', 'F'].map(function (k) {
           return f.twop[k] ? '<span class="src-tag" title="' + CORE.sources[k].label + ' data">' + k + '</span>' : '';
         }).join('') + '</span>';
       var toggle = function () { toggleFluor(f.id); };
@@ -423,7 +439,7 @@
     buildSelection().forEach(function (s) {
       var li = document.createElement('li');
       li.className = 'sel-item';
-      var srcs = ['D', 'Z', 'F'].filter(function (k) { return s.fluor.twop[k]; });
+      var srcs = ['D', 'Z', 'M', 'F'].filter(function (k) { return s.fluor.twop[k]; });
       li.innerHTML =
         '<div class="sel-top">' +
           '<span class="sel-dot" style="background:' + s.color + '"></span>' +
@@ -432,7 +448,7 @@
         '</div>' +
         '<div class="sel-bottom">' +
           '<div class="seg small" role="radiogroup" aria-label="Data source for ' + SV.escapeHtml(s.fluor.name) + '">' +
-            ['D', 'Z', 'F'].map(function (k) {
+            ['D', 'Z', 'M', 'F'].map(function (k) {
               var on = s.source === k;
               return '<button role="radio" data-src="' + k + '" aria-checked="' + on + '"' +
                 (srcs.indexOf(k) < 0 ? ' disabled' : '') +
@@ -652,6 +668,7 @@
         peakLabel: s.fluor.name,
         color: s.color, curve: curve, kind: 'line', width: 2,
         fill: true, fillAlpha: 0.1,
+        points: s.sparse ? curve.pts : null,
         hidden: !!state.hidden['f-' + s.fluor.id],
         tipUnit: gm ? 'gm' : 'norm',
         peakVal: gm ? s.peakGm : 1,
@@ -753,10 +770,11 @@
     $('exc-foot').innerHTML = gm
       ? (missingGm.length
         ? 'Not shown in GM: ' + missingGm.map(function (s) { return SV.escapeHtml(s.fluor.name); }).join(', ') +
-          ' — FPbase two-photon curves are relative, not absolute. Switch to Relative to see them.'
+          ' — those curves are relative, not absolute cross sections. Switch to Relative to see them.'
         : 'Absolute cross-sections in Göppert-Mayer units.')
       : 'Drag the marker to test a wavelength. Drag across the plot to zoom, double-click to reset.' +
-        (state.overlays.score ? ' “Suitability” is this tool’s score, not measured data.' : '');
+        (state.overlays.score ? ' “Suitability” is this tool’s score, not measured data.' : '') +
+        sparseNote(sel);
 
     /* --- emission ------------------------------------------------------- */
     var emSeries = [];
@@ -869,9 +887,18 @@
       // say which yardstick, since comparing in GM and comparing in "% of own
       // peak" can land on different wavelengths
       var basis = n > 1 ? (rec && rec.absolute ? ', compared in GM' : ', compared as % of each own peak') : '';
-      subParts.push((state.objective === 'balanced'
-        ? 'Best worst-case across ' + n + ' fluorophore' + (n > 1 ? 's' : '')
-        : 'Best average signal across ' + n + ' fluorophore' + (n > 1 ? 's' : '')) + basis + '.');
+      // Tracers are scored on clearing a signal floor, not on how bright they
+      // get, so neither yardstick above describes what happened.
+      var allSat = rec && rec.usable && rec.usable.length &&
+        rec.usable.every(function (s) { return s.sat; });
+      if (allSat) {
+        subParts.push('Longest wavelength where ' + (n > 1 ? 'all ' + n + ' dyes are' : 'the dye is') +
+          ' still bright enough.');
+      } else {
+        subParts.push((state.objective === 'balanced'
+          ? 'Best worst-case across ' + n + ' fluorophore' + (n > 1 ? 's' : '')
+          : 'Best average signal across ' + n + ' fluorophore' + (n > 1 ? 's' : '')) + basis + '.');
+      }
     }
     // with more than one laser on the rig, the answer is a wavelength each -
     // the hero number is the one you are tuning, the rest are listed beneath
@@ -942,11 +969,17 @@
       sel.forEach(function (s, i) {
         if (!s.twopCurve) return;
         var raw = excitation(s);
+        /* A tracer's bar is a share of its own peak like everyone else's, but
+         * for these dyes that is not the question - 5% of DiD's peak is still
+         * plenty of signal. Flag which side of "enough" it falls on. */
+        var flag = !s.sat ? '' :
+          '<em class="bar-flag' + (raw >= s.sat ? '' : ' is-low') + '">' +
+          (raw >= s.sat ? 'bright enough' : 'may be dim') + '</em>';
         var row = document.createElement('div');
         row.className = 'bar-row';
         row.innerHTML =
           '<div><div class="bar-label"><i style="background:' + s.color + '"></i>' +
-            '<span>' + SV.escapeHtml(s.fluor.name) + '</span></div>' +
+            '<span>' + SV.escapeHtml(s.fluor.name) + '</span>' + flag + '</div>' +
             '<div class="bar-track"><span class="bar-fill" style="width:' +
               (clamp(raw, 0, 1) * 100).toFixed(1) + '%;background:' + s.color + '"></span></div></div>' +
           '<div class="bar-val">' + pct(raw) + '</div>';
@@ -985,7 +1018,7 @@
     // advice
     var items = SV.explain({
       rec: rec, focus: focus, selection: sel, laser: laser(),
-      channels: state.channels,
+      channels: state.channels, laserMode: state.laserMode,
     });
     // the acquisition plan is shown in the "Channels to acquire" panel, not here
     var ul = $('advice');
