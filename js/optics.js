@@ -64,6 +64,17 @@
    * second, bluer beam on the sample the anatomy is covered and the red one is
    * free to go wherever it likes, so this never applies to more than one. */
   var SOLO_CAP = 940;
+  /* But soft against a peak, and hard against a slope. eYFP doubles between 940
+   * and 960 nm and then falls away again: the cap was catching a maximum that
+   * happens to sit just the wrong side of it, which is not what it is for. So a
+   * lone beam may cross, but only to reach a genuine top - nothing above it in
+   * the laser's range is better - within reach of the cap, and only if the gain
+   * is worth the background it costs. tdTomato and mCherry fail the second test
+   * at once: they are still climbing at 1040 nm, so there is no top to cross to
+   * and the cap holds. */
+  var CAP_REACH = 40;      // the furthest past the cap a peak may be, in nm
+  var CAP_MARGIN = 1.25;   // and the least it must be worth to go there
+  var CAP_SETTLE = 0.97;   // stop at the near edge of a broad top, not its middle
   var DEFAULT_MIN_WL = 760;
   var EM_LO = 380, EM_HI = 800;   // integration window for emission / detection
 
@@ -438,6 +449,31 @@
       };
     }
 
+    /* --- let the cap out to a nearby peak, if there is one --------------- */
+    var capBase = cap;
+    if (cap != null) {
+      var solo = laserGrid(lasers[0], minWl, 2);
+      var score = solo.map(function (wl) { return evalVec([wl]).obj; });
+      var under = 0, peak = null;
+      solo.forEach(function (wl, i) {
+        if (wl <= cap) { if (score[i] > under) under = score[i]; }
+        else if (wl <= cap + CAP_REACH && (!peak || score[i] > peak.obj)) {
+          peak = { wl: wl, obj: score[i] };
+        }
+      });
+      var topped = peak && solo.every(function (wl, i) {
+        return wl <= peak.wl || score[i] <= peak.obj * 1.0001;
+      });
+      if (topped && under > 0 && peak.obj >= under * CAP_MARGIN) {
+        cap = peak.wl;
+        // a broad top is entered at its near edge: no need to run redder than
+        // the gain does, and +/-10 nm is rarely what matters anyway
+        solo.forEach(function (wl, i) {
+          if (wl > capBase && wl < cap && score[i] >= peak.obj * CAP_SETTLE) cap = wl;
+        });
+      }
+    }
+
     /* --- the raw optimum, over every combination on a 2 nm grid ---------- */
     var fine = combos(lasers.map(function (l) { return laserGrid(l, minWl, 2); }));
     var best = null, beyond = null;
@@ -546,6 +582,7 @@
       minWl: minWl,
       mode: mode,
       cap: cap,             // a lone beam is not sent past this, for anatomy
+      capBase: capBase,     // where it would have stopped, before any nearby peak
       beyond: beyond,       // the best the cap ruled out, so it can be explained
       absolute: absolute,   // scored in GM rather than "% of own peak"
       gmScale: gmScale,

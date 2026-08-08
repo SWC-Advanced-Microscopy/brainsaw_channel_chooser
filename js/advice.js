@@ -78,6 +78,27 @@
     // "best option at or below 950 nm" suggestion never appeared
     var anyTunable = (rec.lasers || [laser]).some(function (l) { return l.tunable !== false; });
 
+    /* --- past the usual stopping point, for a peak -------------------------
+     * A lone beam is normally held short of 940 nm so the other channels keep
+     * some anatomy in them. It is let out only to reach a maximum sitting just
+     * the far side of that, which is worth saying: the number looks like the
+     * plateau-chasing the cap exists to prevent, and it is the opposite. */
+    if (rec.cap && rec.capBase && rec.cap > rec.capBase && best.wl > rec.capBase &&
+        rec.evalVec && best.raw) {
+      var atBase = rec.evalVec([rec.capBase]);
+      var jump = usable.map(function (s, i) {
+        return { name: name(s), r: (atBase.raw[i] || 0) / (best.raw[i] || 1) };
+      }).sort(function (a, b) { return a.r - b.r; })[0];
+      if (jump && jump.r < 0.8) {
+        items.push({ kind: 'info', text:
+          best.wl + ' nm is redder than a single beam usually goes here, because ' +
+          jump.name + ' peaks around it — ' + more(jump.r) + ' than at ' + rec.capBase +
+          ' nm, and falling away again above. A peak that close is worth the ' +
+          'background it costs; a curve that merely keeps climbing is not, which ' +
+          'is why this does not run on further.' });
+      }
+    }
+
     /* --- the >950 nm problem ---------------------------------------------- */
     if (best.wl > 950) {
       /* The scarcity of background autofluorescence up here is a property of the
@@ -125,6 +146,13 @@
       }).filter(function (g) { return g.r > 1.2; })
         .sort(function (a, b) { return b.r - a.r; });
       if (gains.length) {
+        /* Only offer a shorter wavelength if it is actually still a reasonable
+         * place to sit. Past a steep flank it is not: eYFP at 920 nm is a third
+         * of what it is at 960, and "works too" would be a lie. */
+        var shorter = best.wl - 20;
+        var back = rec.scoreCurve && shorter >= rec.minWl &&
+          rec.scoreCurve.at(shorter) >= best.obj * 0.65
+          ? Math.round(shorter / 10) * 10 : null;
         items.push({ kind: 'info', text:
           list(gains.map(function (g) { return g.name; })) +
           (gains.length > 1 ? ' keep' : ' keeps') + ' getting brighter above ' + rec.cap +
@@ -132,8 +160,9 @@
           Math.round(rec.beyond.wl / 10) * 10 + ' nm — and you can go there. What you give up is the ' +
           'background in the other channels, which is what you register sections ' +
           'against, so this stops at ' + rec.cap + ' nm rather than chasing the ' +
-          'cross-section. 920 nm works too and leaves a little more of it. These ' +
-          'spectra change slowly: ±10 nm is rarely the thing that matters.' });
+          'cross-section. ' + (back ? back + ' nm works too and leaves a little more of ' +
+          'it. ' : '') + 'These spectra change slowly: ±10 nm is rarely the thing ' +
+          'that matters.' });
         capped = true;
       }
     }

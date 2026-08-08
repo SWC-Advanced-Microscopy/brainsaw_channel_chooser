@@ -357,6 +357,17 @@ rather than silently made. With a second, bluer beam on the sample the anatomy i
 covered and the red one goes wherever it likes, so this never applies to more than
 one beam, nor to a fixed line, nor to a laser that cannot tune below 940 nm.
 
+**The cap is soft against a peak and hard against a slope.** eYFP doubles between
+940 and 960 nm and then falls away again, so a flat boundary was cutting across a
+maximum that merely happens to sit the wrong side of it. A lone beam may therefore
+cross, but only to reach a genuine top — nothing above it in the laser's range
+scores better — within 40 nm of the cap, and only if it is worth at least 25% more
+than the best point below. Having crossed, it stops at the near edge of that top
+rather than its middle. tdTomato and mCherry fail the test immediately: they are
+still climbing at 1040 nm, so there is no top to cross to and 940 holds. In
+practice the only things this moves are eYFP and citrine, from 940 to 960 nm, and
+the advice says why the number is redder than usual.
+
 **Whether you need the second line is your call, not the tool's.** How much signal
 a fluorophore gives depends on how well it is expressed in that brain, which the
 page cannot know. So it works out the best answer with everything on and the best
