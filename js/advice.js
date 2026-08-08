@@ -102,9 +102,13 @@
     }).slice(0, 2).forEach(function (c, altIndex) {
       var better = [], worse = [];
       usable.forEach(function (s, i) {
-        var d = c.per[i] - best.per[i];
-        if (d > 0.08) better.push(s.fluor.name);
-        else if (d < -0.08) worse.push(s.fluor.name);
+        // relative, not absolute: scored in GM the numbers are scaled by the
+        // brightest fluorophore, so a fixed 0.08 step called almost everything
+        // "worse" and nothing "better"
+        if (!best.per[i]) return;
+        var d = c.per[i] / best.per[i] - 1;
+        if (d > 0.05) better.push(s.fluor.name);
+        else if (d < -0.05) worse.push(s.fluor.name);
       });
       var ratio = best.obj ? c.obj / best.obj : 1;
       var txt = ratio > 1.02

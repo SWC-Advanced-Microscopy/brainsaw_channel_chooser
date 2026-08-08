@@ -133,6 +133,14 @@ score = sigma2(L) x powerWeight(L) x contextWeight(L)
   property of the sample rather than the laser: there is little background
   autofluorescence to give anatomical context for registering sections.
 
+With more than one fluorophore selected, they are compared in **absolute GM**
+whenever all of them have it — the same condition that switches the chart's own
+units. Normalising each to its own peak silently assumes they are equally bright,
+and they are not: tdTomato peaks at 140 GM against eGFP's 56, so 23% of tdTomato's
+best is still 32 GM, close to eGFP's 55. Scored that way the eGFP + tdTomato pair
+lands at 940 nm rather than being dragged out to 980 to rescue a percentage that
+was never the point.
+
 Short wavelengths are a **hard floor**, not a penalty: nothing below 760 nm is
 ever suggested, because the laser is less stable there and the embedding agar
 autofluoresces heavily. mCherry's cross-section peaks at 740 nm and the tool still
@@ -158,11 +166,13 @@ is the honest answer.
 The >950 nm penalty is the opinionated part and is a slider — set it to zero to
 score on measured cross-section and laser power alone.
 
+The round-number snap prefers **wavelengths people actually dial** over merely
+round ones: 900 nm is rounder than 920 nm, but nobody images GFP at 900.
+
 Sanity checks against normal practice: eGFP → 920 nm, mCherry → 760 nm (its
 740 nm peak is below the floor), tdTomato → 1040 nm on an InSight or a Discovery
-and 1010 nm on a Mai Tai, which runs out of power past that. eGFP + tdTomato
-comes out at 980 nm on the worst-case objective, because 920 nm leaves tdTomato
-at under a quarter of its own best; 920 and 950 are both offered as alternatives.
+and 1010 nm on a Mai Tai, which runs out of power past that, eGFP + tdTomato →
+940 nm with 960, 920 and 980 offered as alternatives.
 
 ### Lasers
 

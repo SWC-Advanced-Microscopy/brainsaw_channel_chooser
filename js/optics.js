@@ -219,12 +219,16 @@
 
   /* ------------------------------------------------------- recommender */
 
-  var NICE = [1040, 1000, 980, 960, 940, 920, 900, 880, 860, 840, 820, 800, 780, 760];
+  /* Wavelengths people actually dial in. Not merely round: 900 nm is rounder
+   * than 920 nm but nobody images GFP at 900, so 920 has to outrank it when the
+   * two score within a hair of each other. */
+  var CONVENTIONAL_WL = [760, 780, 800, 840, 880, 920, 940, 960, 980, 1000, 1040];
 
   function niceness(wl) {
-    if (wl % 50 === 0) return 3;
-    if (wl % 20 === 0) return 2;
-    if (wl % 10 === 0) return 1;
+    if (CONVENTIONAL_WL.indexOf(wl) >= 0) return 3;
+    if (wl % 50 === 0) return 2;
+    if (wl % 20 === 0) return 1;
+    if (wl % 10 === 0) return 0.5;
     return 0;
   }
 
@@ -246,11 +250,37 @@
     var usable = selection.filter(function (s) { return s.twopCurve; });
     if (!usable.length || hi < lo) return null;   // hi === lo for a fixed-line laser
 
+    /* Compare fluorophores in ABSOLUTE cross-section (GM) whenever every one of
+     * them has it, exactly as the chart switches its own units.
+     *
+     * Normalising each fluorophore to its own peak silently assumes they are all
+     * equally bright, and they are not: tdTomato peaks at 140 GM against eGFP's
+     * 56. At 920 nm tdTomato sits at 23% of its own best, which reads as dire,
+     * but 32 GM is still not far off eGFP's 55 - and pushing out to 980 nm to
+     * "rescue" it costs eGFP half its signal to gain tdTomato very little in
+     * absolute terms. Scored in GM, the best worst case lands at 940-950 nm.
+     *
+     * Scaled by the brightest fluorophore in the selection so the objective
+     * stays in 0..1 and the score curve can share the chart's axis.
+     */
+    var absolute = usable.every(function (s) { return s.gmCurve; });
+    var gmScale = 1;
+    if (absolute) {
+      gmScale = usable.reduce(function (m, s) {
+        return Math.max(m, s.gmCurve.peak(lo, hi).y);
+      }, 0) || 1;
+    }
+    var sigma = function (s, wl) {
+      return absolute
+        ? Math.max(0, s.gmCurve.at(wl)) / gmScale
+        : Math.max(0, s.twopCurve.at(wl));
+    };
+
     var scoreAt = function (wl) {
       var pw = powerWeight(laser, wl);
       var cw = contextWeight(wl, ctxStrength);
       var per = usable.map(function (s) {
-        return Math.max(0, s.twopCurve.at(wl)) * pw * cw;
+        return sigma(s, wl) * pw * cw;
       });
       var obj;
       if (mode === 'total') {
@@ -292,7 +322,7 @@
       cands.push({
         wl: c, obj: sc.obj, per: sc.per, power: sc.power, mw: sc.mw, ctx: sc.ctx,
         rel: sc.obj / best.obj,
-        nice: niceness(c) + (NICE.indexOf(c) >= 0 ? 1 : 0),
+        nice: niceness(c),
       });
     }
     /* A single-line laser (an Axon) has no round wavelength inside its range,
@@ -306,7 +336,7 @@
     }
 
     cands.sort(function (a, b) {
-      // within 2% treat as equivalent and prefer the rounder / more conventional
+      // within 2% treat as equivalent and prefer the conventional / rounder one
       if (Math.abs(a.rel - b.rel) < 0.02) return b.nice - a.nice || b.obj - a.obj;
       return b.obj - a.obj;
     });
@@ -331,8 +361,8 @@
     var picks = [top];
     cands.forEach(function (c) {
       if (picks.length >= 4) return;
-      if (c.obj < 0.15 * top.obj) return;
-      if (picks.some(function (p) { return Math.abs(p.wl - c.wl) < 30; })) return;
+      if (c.obj < 0.4 * top.obj) return;   // not a real option, just a local bump
+      if (picks.some(function (p) { return Math.abs(p.wl - c.wl) < 20; })) return;
       // must be non-dominated by everything already offered, not just by the
       // top pick - otherwise 890 nm rides in behind 920 nm, which it loses to
       // for every fluorophore
@@ -350,6 +380,8 @@
       range: [lo, hi],
       minWl: minWl,
       mode: mode,
+      absolute: absolute,   // scored in GM rather than "% of own peak"
+      gmScale: gmScale,
     };
   }
 

@@ -60,14 +60,18 @@ Requested structure: a **"Show common only" checkbox, on by default**, with
 everything else still reachable behind it. Searching always finds uncommon
 entries even when the box is ticked.
 
-- **Common (12):** eBFP2, eCFP, eGFP, eYFP, mOrange2, tdTomato, DsRed2, mRuby2,
-  mCherry, Alexa 488 / 568 / 594.
+- **Common (13):** eBFP2, eCFP, eGFP, eYFP, tdTomato, DsRed2, mCherry,
+  Alexa 488 / 568 / 594, and the tracers DiI, DiO, DiD (in that order).
+  mOrange2 and mRuby2 were moved out to uncommon.
 - **Uncommon:** everything else — the cyans, yellows, oranges, all far-reds, the
   red calcium sensors, and the 1p-only entries below.
 - **Deleted outright:** mEGFP, Superfolder GFP.
 - **Naming:** lower-case leading `e` — eGFP, eYFP, eCFP, eBFP2.
 
-Additions requested: **tdStayGold, DiO, DiI, DiD**.
+Additions requested: **tdStayGold, DiO, DiI, DiD**. The three carbocyanine
+tracers have their own family chip, **Tracers**, rather than being scattered
+across the emission colours: you reach for "a tracer" first and pick the colour
+that stays clear of your labels second.
 
 > FPbase has no `tdStayGold` entry (only StayGold, StayGold-E138D, mStayGold,
 > mStayGold2), so the parent **StayGold** was used. None of the four have a
@@ -129,6 +133,13 @@ score = sigma2(L) x powerWeight(L) x contextWeight(L)
   autofluorescence to give anatomical context for registering sections. This is
   why tdTomato alone is not imaged at 1050 nm despite its peak sitting there.
   Adjustable via a slider.
+- **Multiple fluorophores are compared in absolute GM** when all of them have it.
+  Normalising each to its own peak assumes they are equally bright; tdTomato
+  peaks at 140 GM and eGFP at 56, so eGFP + tdTomato belongs at 940 nm, not out
+  at 980 chasing a percentage.
+- **The round-number snap prefers conventional wavelengths, not merely round
+  ones.** 900 nm is rounder than 920 nm and wins any tie on roundness alone,
+  which is wrong for GFP.
 
 **760 nm is a hard floor, not a penalty.** Below it the laser is less stable and
 the embedding agar autofluoresces heavily, so those wavelengths are not used

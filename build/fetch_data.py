@@ -184,11 +184,11 @@ CURATED = [
     ("citrine",      "Citrine",         "Citrine",         "yellow",  False),
     ("mcitrine",     "mCitrine",        "mCitrine",        "yellow",  False),
     ("venus",        "Venus",           "Venus",           "yellow",  False),
-    ("morange2",     "mOrange2",        "mOrange2",        "orange",  True),
+    ("morange2",     "mOrange2",        "mOrange2",        "orange",  False),
     ("mko2",         "mKO2",            "mKO2",            "orange",  False),
     ("tdtomato",     "tdTomato",        "tdTomato",        "orange",  True),
     ("dsred2",       "DsRed2",          "DsRed2",          "red",     True),
-    ("mruby2",       "mRuby2",          "mRuby2",          "red",     True),
+    ("mruby2",       "mRuby2",          "mRuby2",          "red",     False),
     ("mscarlet",     "mScarlet",        "mScarlet",        "red",     False),
     ("mscarlet_i",   "mScarlet-I",      "mScarlet-I",      "red",     False),
     ("mcherry",      "mCherry",         "mCherry",         "red",     True),
@@ -215,12 +215,16 @@ CURATED = [
 #
 # FPbase has no tdStayGold entry - StayGold, StayGold-E138D, mStayGold and
 # mStayGold2 only - so the parent StayGold is used here.
+# The lipophilic carbocyanine tracers get their own family rather than being
+# scattered across the emission colours, because they are picked as a set - you
+# reach for "a tracer", then choose the colour that stays clear of your labels.
+# Listed in the order people say them: DiI, DiO, DiD.
 ONE_PHOTON_ONLY = [
-    # slug          label        fpbase name  family   kind
-    ("staygold",   "StayGold",   "StayGold",  "green",  "protein"),
-    ("dio",        "DiO",        "DiO",       "green",  "dye"),
-    ("dii",        "DiI",        "DiI",       "orange", "dye"),
-    ("did",        "DiD",        "DiD",       "farred", "dye"),
+    # slug          label        fpbase name  family    kind       common
+    ("dii",        "DiI",        "DiI",       "tracer",  "dye",     True),
+    ("dio",        "DiO",        "DiO",       "tracer",  "dye",     True),
+    ("did",        "DiD",        "DiD",       "tracer",  "dye",     True),
+    ("staygold",   "StayGold",   "StayGold",  "green",   "protein", False),
 ]
 
 # BrainSaw-1, from the SWC wiki. `role` drives how it is drawn.
@@ -523,7 +527,7 @@ def build():
 
     # ---- one-photon-only entries -------------------------------------------
     op_ids = {}
-    for slug, label, fpname, family, kind in ONE_PHOTON_ONLY:
+    for slug, label, fpname, family, kind, common in ONE_PHOTON_ONLY:
         entry = by_name.get(fpname, {})
         for sub in ("EX", "EM"):
             if sub in entry:
@@ -531,9 +535,9 @@ def build():
     print(f"fetching {len(op_ids)} one-photon-only spectra ...")
     op_raw = fetch_spectra(list(op_ids.values()))
 
-    for slug, label, fpname, family, kind in ONE_PHOTON_ONLY:
+    for slug, label, fpname, family, kind, common in ONE_PHOTON_ONLY:
         rec = {"id": slug, "name": label, "family": family, "fpbase": fpname,
-               "common": False, "twop": {}, "noTwoP": True,
+               "common": common, "twop": {}, "noTwoP": True,
                "dye": kind == "dye"}
         if kind == "protein":
             add_1p(rec, fpname)

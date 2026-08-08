@@ -17,6 +17,7 @@
     { id: 'red', label: 'Red', wl: 605 },
     { id: 'farred', label: 'Far red', wl: 665 },
     { id: 'sensor', label: 'Sensors', wl: 590 },
+    { id: 'tracer', label: 'Tracers', wl: 565 },
   ];
 
   var state = {
@@ -574,9 +575,12 @@
     } else {
       // count only the ones that actually drive the recommendation
       var n = rec && rec.usable ? rec.usable.length : sel.length;
+      // say which yardstick, since comparing in GM and comparing in "% of own
+      // peak" can land on different wavelengths
+      var basis = n > 1 ? (rec && rec.absolute ? ', compared in GM' : ', compared as % of each own peak') : '';
       subParts.push((state.objective === 'balanced'
         ? 'Best worst-case across ' + n + ' fluorophore' + (n > 1 ? 's' : '')
-        : 'Best average signal across ' + n + ' fluorophore' + (n > 1 ? 's' : '')) + '.');
+        : 'Best average signal across ' + n + ' fluorophore' + (n > 1 ? 's' : '')) + basis + '.');
     }
     if (focus) {
       // absolute power at the sample, which is what decides whether a
@@ -669,7 +673,13 @@
     var pw = SV.optics.powerWeight(L, wl);
     var cw = SV.optics.contextWeight(wl, state.ctxStrength);
     var usable = sel.filter(function (s) { return s.twopCurve; });
-    var per = usable.map(function (s) { return Math.max(0, s.twopCurve.at(wl)) * pw * cw; });
+    // must use the same yardstick as the recommendation, or "better for X"
+    // comparisons end up mixing GM against % of own peak
+    var abs = !!(rec && rec.absolute);
+    var per = usable.map(function (s) {
+      var v = abs ? Math.max(0, s.gmCurve.at(wl)) / rec.gmScale : Math.max(0, s.twopCurve.at(wl));
+      return v * pw * cw;
+    });
     var obj = state.objective === 'total'
       ? per.reduce(function (a, b) { return a + b; }, 0) / (per.length || 1)
       : (per.length ? Math.min.apply(null, per) : 0);
