@@ -45,7 +45,7 @@ python3 -m http.server
 The data is emitted as both `.json` and `.js`, and the page loads the `.js`
 variants via plain `<script>` tags, so **it works straight off the filesystem** —
 unlike the previous viewer. The only feature that needs an HTTP server is the
-on-demand filter library (`data/filters/*.json`), which is fetched lazily when
+on-demand filter library (`data/filter-library/*.json`), which is fetched lazily when
 you open the filter picker.
 
 ## Deploying
@@ -68,6 +68,20 @@ python3 build/fetch_data.py
 This pulls from FPbase and from the Drobizhev/Zipfel CSVs in the old viewer's
 repo, and writes `data/`. Downloaded spectra are cached in `build/.cache/`, so a
 re-run to change how the data is shaped does not re-download ~4,000 curves.
+
+Each file is written twice — a `.json` for reading and tooling, and an identical
+`.js` assigning the same object to a window global so the page works off the
+filesystem — and both are formatted to be read, with each spectrum kept on one
+line:
+
+```
+data/fluorophores.json          1p and 2p spectra for every curated fluorophore
+data/lasers.json                laser tuning curves, absolute mW at the head
+data/bundled-filters.json       curves for the filters the built-in microscopes use
+data/microscopes.json           built-in microscope configurations
+data/filter-library-index.json  searchable index of the whole FPbase filter library
+data/filter-library/*.json      the library's curves, fetched on demand
+```
 
 Edit `CURATED` in `build/fetch_data.py` to change the fluorophore list and which
 entries count as "common" (the short list shown by default), `ONE_PHOTON_ONLY` for

@@ -287,3 +287,35 @@ Not found and therefore not modelled: per-unit measured tuning curves for any of
 these (manufacturers publish guaranteed minima at a few wavelengths plus a graph,
 not tabulated data), and the Coherent Discovery's and CRONUS-2P's fixed secondary
 outputs, which are separate beams rather than points on a tuning curve.
+
+
+
+# Next phase
+
+Different users will have different hardware. We want them to be able to select their hardware in the GUI. 
+Ideally their choices should be remembered next time they visit. But if that involves stupid shit like cookies then we leave it. 
+Advise.
+
+We want two generic systems to choose from in the microscope drop-down. 
+
+The first is "BrainSaw 4 chan" this is what you have now but choose the Mai Tai eHP DS laser. 
+
+The second is "BrainSaw 3 chan". As for 4 chan but use these three filters:
+Red ET570lp (570 nm to about 700 nm, where the laser blocking filter kicks in)
+Green   ET525/50m (~500 to 550 nm) (installed 20/11/2019)
+Blue    FF01-450/70
+
+Note the laser blocking filter. Just assume that always lives at 700 nm in all rigs. 
+
+## Exporting configs
+The user should be able to change the settings as they currently can (changing filters, number of emission channels, laser, etc) then they should have the option to download this. Add a button to export the config. They must be prompted to enter a microscope name. The downloaded file should include the name of the scope as a field. 
+
+## Importing configs
+There should be an "load config" button. That reads the config and names the scope according to the name in the config. The "BrainSaw 3 chan" and "BrainSaw 4 chan" should similarly exist as configs in the repo and their information is obtained from that. 
+Sensible location for the import and export buttons is at the top near the microscope drop-down.
+
+## Automating config import
+I want to be able to set the config then download it. Then add it as a file to the BakingTray SETTINGS directory. BakingTray will (I will do not you) have a button or menu item to "go to channel chooser site". Upon doing that it uploads (I don't know how. Serialised via URL?) automatically the settings from disk so the user is automagically presented with THEIR scope on the site. 
+
+## Multiple lasers
+It is possible (although not common) for a rig to have multiple laser lines. So we need a way to handle this. Presently the laser is a drop-down up at the top. It can't stay there. 1. It can't be a drop-down if we want to be able to select multiple lasers. 2. It will get busy with the extra buttons for import and export. I think it just has to go below "detection channels" on the left hand bar. No other obvious choice.  

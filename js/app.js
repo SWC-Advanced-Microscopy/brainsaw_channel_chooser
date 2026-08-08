@@ -2,7 +2,23 @@
 (function (SV) {
   'use strict';
 
-  var CORE = window.SV_CORE;
+  /* The vendored data is split across files named after what is in them; this
+   * stitches them back into one object for the rest of the app to read. */
+  var CORE = (function () {
+    var fl = window.SV_FLUOROPHORES, la = window.SV_LASERS,
+        bf = window.SV_BUNDLED_FILTERS, ms = window.SV_MICROSCOPES;
+    if (!fl || !la || !bf || !ms) return null;
+    return {
+      generated: fl.generated,
+      normWindow: fl.normWindow,
+      minWavelength: fl.minWavelength,
+      sources: fl.sources,
+      fluorophores: fl.fluorophores,
+      filters: bf.filters,
+      lasers: la.lasers,
+      scopes: ms.microscopes,
+    };
+  })();
   var INDEX = window.SV_FILTER_INDEX;
 
   var EXC_LO = 740, EXC_HI = 1100;
@@ -889,11 +905,11 @@
     });
   }
 
+  /* `n` is the shard's file name, carried by every index entry. */
   function loadShard(n) {
     var key = String(n);
     if (shardCache[key]) return Promise.resolve(shardCache[key]);
-    var name = ('00' + n).slice(-3);
-    return fetch('data/filters/' + name + '.json').then(function (r) {
+    return fetch('data/filter-library/' + key + '.json').then(function (r) {
       if (!r.ok) throw new Error('http ' + r.status);
       return r.json();
     }).then(function (j) { shardCache[key] = j; return j; });
@@ -992,7 +1008,7 @@
   }
 
   /* Shared-link channels may reference library filters that are not bundled in
-   * core.js, so pull their curves before the first render. */
+   * bundled-filters.js, so pull their curves before the first render. */
   function hydrateExternalFilters() {
     var need = [];
     var seen = {};
@@ -1223,7 +1239,7 @@
   function init() {
     if (!CORE) {
       document.body.innerHTML = '<p style="padding:40px;font:16px system-ui">' +
-        'Could not load <code>data/core.js</code>.</p>';
+        'Could not load the data files in <code>data/</code>.</p>';
       return;
     }
     prepare();

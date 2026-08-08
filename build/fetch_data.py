@@ -12,9 +12,17 @@ Zipfel lab (Cornell)             - absolute 2p action cross sections (GM), same 
 
 Outputs (written to ../data)
 ----------------------------
-core.json          fluorophores, BrainSaw filters, detectors, lasers  (loaded up front)
-filter-index.json  searchable index of the whole FPbase filter library
-filters/NN.json    sharded transmission curves, fetched on demand by the picker
+fluorophores.json          1p and 2p spectra for every curated fluorophore
+lasers.json                laser tuning curves, absolute mW at the head
+bundled-filters.json       curves for the filters the built-in microscopes use
+microscopes.json           built-in microscope configurations
+filter-library-index.json  searchable index of the whole FPbase filter library
+filter-library/*.json      the library's curves, fetched on demand by the picker
+
+Each of these is written twice: a .json for reading and tooling, and an identical
+.js that assigns the same object to a window global, so index.html works when
+opened straight off the filesystem. Both are formatted for a human to read, with
+each spectrum kept on a single line.
 """
 
 import json
@@ -436,7 +444,6 @@ ZIPFEL_ONLY = {
 
 def build():
     os.makedirs(OUT, exist_ok=True)
-    os.makedirs(os.path.join(OUT, "filters"), exist_ok=True)
 
     print("fetching FPbase spectra index ...")
     index = gql("{spectra{id category subtype owner{name}}}")["spectra"]
@@ -591,7 +598,33 @@ def build():
                   "note": "Absolute 2p action cross sections, Zipfel lab, Cornell."},
         },
     }
-    write(os.path.join(OUT, "core.json"), core, "SV_CORE")
+    stamp = core["generated"]
+    write(os.path.join(OUT, "fluorophores.json"), {
+        "generated": stamp,
+        "note": "Fluorophore spectra: one-photon excitation and emission, plus "
+                "two-photon cross sections from each source.",
+        "normWindow": core["normWindow"],
+        "minWavelength": core["minWavelength"],
+        "sources": core["sources"],
+        "fluorophores": core["fluorophores"],
+    }, "SV_FLUOROPHORES")
+    write(os.path.join(OUT, "lasers.json"), {
+        "generated": stamp,
+        "note": "Laser tuning curves. powerMw is average power at the laser head "
+                "in mW; curve is the same shape normalised to its peak.",
+        "lasers": core["lasers"],
+    }, "SV_LASERS")
+    write(os.path.join(OUT, "bundled-filters.json"), {
+        "generated": stamp,
+        "note": "Transmission curves for the filters the built-in microscopes use. "
+                "Every other filter lives in the on-demand library.",
+        "filters": core["filters"],
+    }, "SV_BUNDLED_FILTERS")
+    write(os.path.join(OUT, "microscopes.json"), {
+        "generated": stamp,
+        "note": "Built-in microscope configurations.",
+        "microscopes": core["scopes"],
+    }, "SV_MICROSCOPES")
 
     # ---- full filter library ---------------------------------------------
     build_filter_library(index)
@@ -694,15 +727,26 @@ def build_filter_library(index):
         shards.setdefault(shard, {})[e["id"]] = curve
         name = e["owner"]["name"]
         idx.append({
-            "id": e["id"], "n": name, "t": e["subtype"], "s": shard,
+            "id": e["id"], "n": name, "t": e["subtype"], "s": shard_name(shard, len(entries)),
             "v": vendor_of(name), "c": centre_of(name, curve),
         })
 
-    write(os.path.join(OUT, "filter-index.json"),
-          {"shardSize": SHARD_SIZE, "filters": idx}, "SV_FILTER_INDEX")
+    write(os.path.join(OUT, "filter-library-index.json"),
+          {"note": "Searchable index of the whole FPbase filter library. Each entry "
+                   "names the file in filter-library/ that holds its curve.",
+           "shardSize": SHARD_SIZE, "filters": idx}, "SV_FILTER_INDEX")
     for shard, payload in shards.items():
-        write(os.path.join(OUT, "filters", f"{shard:03d}.json"), payload)
+        write(os.path.join(OUT, "filter-library", shard_name(shard, len(entries)) + ".json"),
+              payload)
     print(f"  -> {len(idx)} filters in {len(shards)} shards")
+
+
+def shard_name(shard, total):
+    """Shards are alphabetical by filter name, so number them by the range of
+    library positions they hold - readable, and obviously ordered."""
+    lo = shard * SHARD_SIZE + 1
+    hi = min((shard + 1) * SHARD_SIZE, total)
+    return f"filters-{lo:04d}-{hi:04d}"
 
 
 VENDORS = ["Semrock", "Chroma", "Alluxa", "Omega", "Thorlabs", "Zeiss", "Nikon",
@@ -729,9 +773,58 @@ def centre_of(name, curve):
     return int(round((over[0] + over[-1]) / 2)) if over else None
 
 
+def _is_leaf(v):
+    """A value that carries no structure worth putting on its own line."""
+    if isinstance(v, dict):
+        return False
+    if isinstance(v, list):
+        return all(not isinstance(x, dict) for x in _flat(v))
+    return True
+
+
+def _flat(seq):
+    for x in seq:
+        if isinstance(x, list):
+            yield from _flat(x)
+        else:
+            yield x
+
+
+def dumps_readable(obj, indent=0):
+    """JSON a person can read, with one spectrum per line.
+
+    Structure is indented, but anything whose contents are purely numeric -
+    a packed curve, a list of xy pairs, an index entry - stays on a single
+    line. Otherwise a 4000-sample spectrum would run for 4000 lines and the
+    shape of the file would be lost entirely.
+    """
+    pad, pad2 = " " * indent, " " * (indent + 2)
+
+    if isinstance(obj, dict):
+        if not obj:
+            return "{}"
+        if all(_is_leaf(v) for v in obj.values()):
+            return json.dumps(obj, separators=(", ", ": "))
+        items = [f'{pad2}{json.dumps(k)}: {dumps_readable(v, indent + 2)}'
+                 for k, v in obj.items()]
+        return "{\n" + ",\n".join(items) + "\n" + pad + "}"
+
+    if isinstance(obj, list):
+        if not obj:
+            return "[]"
+        if all(_is_leaf(v) for v in obj):
+            return json.dumps(obj, separators=(", ", ": "))
+        items = [f'{pad2}{dumps_readable(v, indent + 2)}' for v in obj]
+        return "[\n" + ",\n".join(items) + "\n" + pad + "]"
+
+    return json.dumps(obj)
+
+
 def write(path, obj, global_name=None):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    body = dumps_readable(obj)
     with open(path, "w") as fh:
-        json.dump(obj, fh, separators=(",", ":"))
+        fh.write(body + "\n")
     print(f"  wrote {os.path.relpath(path, OUT)} ({os.path.getsize(path) / 1024:.0f} kB)")
 
     # Also emit a plain-script version so index.html works straight off the
@@ -739,9 +832,7 @@ def write(path, obj, global_name=None):
     if global_name:
         js_path = os.path.splitext(path)[0] + ".js"
         with open(js_path, "w") as fh:
-            fh.write(f"window.{global_name}=")
-            json.dump(obj, fh, separators=(",", ":"))
-            fh.write(";\n")
+            fh.write(f"window.{global_name} = {body};\n")
         print(f"  wrote {os.path.relpath(js_path, OUT)} "
               f"({os.path.getsize(js_path) / 1024:.0f} kB)")
 
