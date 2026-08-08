@@ -586,16 +586,6 @@ def build():
             continue
         fluorophores.append(rec)
 
-    # Zipfel-only dyes
-    for slug, (label, family, exmax, emmax) in ZIPFEL_ONLY.items():
-        if slug not in local2p["Z"]:
-            continue
-        rec = {"id": slug, "name": label, "family": family, "fpbase": None,
-               "exMax": exmax, "emMax": emmax, "dye": True, "common": True,
-               "twop": {}}
-        add_2p(rec, "Z", local2p["Z"][slug], absolute=True)
-        fluorophores.append(rec)
-
     # ---- one-photon-only entries -------------------------------------------
     op_ids = {}
     for slug, label, fpname, family, kind, common in ONE_PHOTON_ONLY:
@@ -630,6 +620,18 @@ def build():
         if not rec.get("em"):
             print(f"  -- {label}: no emission spectrum, skipping")
             continue
+        fluorophores.append(rec)
+
+    # Zipfel-only dyes. Last in the list, and so last on the page: the Alexas
+    # are a good deal less likely to be what is in the brain than the tracers
+    # above them.
+    for slug, (label, family, exmax, emmax) in ZIPFEL_ONLY.items():
+        if slug not in local2p["Z"]:
+            continue
+        rec = {"id": slug, "name": label, "family": family, "fpbase": None,
+               "exMax": exmax, "emMax": emmax, "dye": True, "common": True,
+               "twop": {}}
+        add_2p(rec, "Z", local2p["Z"][slug], absolute=True)
         fluorophores.append(rec)
 
     n_common = sum(1 for f in fluorophores if f.get("common"))
