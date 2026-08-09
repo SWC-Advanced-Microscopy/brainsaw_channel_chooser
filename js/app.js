@@ -1248,12 +1248,9 @@
       list.insertBefore(head, list.firstChild);
     }
     $('acquire-note').textContent =
-      'Background estimates are a heuristic for how much tissue and agar ' +
-      'autofluorescence a channel sees at ' + wl + ' nm, not measured data. They ' +
-      'fall off as the laser is tuned redder, soonest for the bluest channels, and ' +
-      'they fall off gradually — the bars are the estimate, and the words are just ' +
-      'bands drawn across them, so a channel does not change character at the ' +
-      'wavelength where its word does.';
+      'Background indicates how much autofluorescence a channel ' +
+      'sees at ' + wl + ' nm. Background fluorescence gradually falls off ' +
+      'as the laser is tuned to longer wavelengths; the blue channel is lost first.';
   }
 
   /* -- matrix ------------------------------------------------------------ */
@@ -1289,7 +1286,7 @@
     tbl.innerHTML = head + '<tbody>' + body + '</tbody>';
   }
 
-  /* -- provenance & data table ------------------------------------------- */
+  /* -- provenance ------------------------------------------- */
   function renderProvenance() {
     var sel = buildSelection();
     var fl = allFilters();
@@ -1321,26 +1318,6 @@
         '<span class="tag' + (o.modelled ? ' modelled' : '') + '">' + SV.escapeHtml(o.tag) + '</span>' +
         '<span>' + SV.escapeHtml(o.text || '') + '</span></li>';
     }).join('') + '</ul>';
-
-    renderDataTable(sel);
-  }
-
-  /* The table view: the numbers behind the excitation chart, at 10 nm steps.
-   * Present so the charts are never the only way to read the data. */
-  function renderDataTable(sel) {
-    var tbl = $('data-table');
-    if (!sel.length) { tbl.innerHTML = ''; return; }
-    var lo = EXC_LO, hi = EXC_HI, step = 10;
-    var head = '<thead><tr><th>nm</th>' + sel.map(function (s) {
-      return '<th>' + SV.escapeHtml(s.fluor.name) + '</th>';
-    }).join('') + '</tr></thead>';
-    var rows = [];
-    for (var wl = lo; wl <= hi; wl += step) {
-      rows.push('<tr><td>' + wl + '</td>' + sel.map(function (s) {
-        return '<td>' + (s.twopCurve ? pct(s.twopCurve.at(wl)) : '–') + '</td>';
-      }).join('') + '</tr>');
-    }
-    tbl.innerHTML = head + '<tbody>' + rows.join('') + '</tbody>';
   }
 
   /* ---------------------------------------------------------- filter UI */
@@ -1420,34 +1397,151 @@
     toastTimer = setTimeout(function () { t.classList.remove('on'); }, 2200);
   }
 
-  function downloadCSV() {
-    var sel = buildSelection();
-    if (!sel.length) { toast('Nothing selected'); return; }
-    var bd = breakdown(sel);
-    var lines = [['fluorophore', '2p_source', '2p_peak_nm']
-      .concat(state.channels.map(function (c) { return c.name + '_frac'; }))
-      .concat(['total_capture']).join(',')];
-    bd.rows.forEach(function (row, i) {
-      var s = sel[i];
-      lines.push([s.fluor.name, s.source || '', s.twopPeak || '']
-        .concat(row.frac.map(function (v) { return v.toFixed(4); }))
-        .concat([row.total.toFixed(4)]).join(','));
+  /* -- the summary plot ---------------------------------------------------
+   *
+   * Opened in a window of its own rather than a panel or a dialog: it is a
+   * reference you look things up in while working on the page behind it, and it
+   * is longer than the page is tall.
+   */
+  function summaryGroups(commonOnly) {
+    var groups = [{ rows: [] }, { rows: [] }, { rows: [] }];   // protein, Alexa, tracer
+    CORE.fluorophores.forEach(function (f) {
+      if (commonOnly && !f.common) return;
+      // dTomato is tdTomato's curve halved, so with every row scaled to its own
+      // peak the two are the same row twice
+      if (f.id === 'dtomato') return;
+      var src = sourceFor({ id: f.id });
+      var t = src ? f.twop[src] : null;
+      if (!t || !t._curve) return;                             // nothing to draw
+      var g = /^alexa/.test(f.id) ? 1 : f.family === 'tracer' ? 2 : 0;
+      groups[g].rows.push({
+        name: f.name, curve: t._curve, sparse: !!t.sparse,
+        color: SV.wavelengthLine(clamp(f.emMax || 520, 400, 700), false, 0.34),
+      });
     });
-    var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'channel-assignment.csv';
-    a.click();
-    URL.revokeObjectURL(a.href);
+    return groups.filter(function (g) { return g.rows.length; });
   }
 
-  function downloadPNG(key) {
+  function openSummary(commonOnly) {
+    var groups = summaryGroups(commonOnly);
+    if (!groups.length) { toast('No two-photon data to plot'); return; }
+    var cv = SV.summaryPlot.draw(groups, { scale: 2 });
+    var title = (commonOnly ? 'Common' : 'All') + ' fluorophores — two-photon excitation';
+    var w = window.open('', 'sv-summary-' + (commonOnly ? 'common' : 'all'),
+      'width=' + Math.min(980, cv.width / 2 + 60) + ',height=820,scrollbars=yes');
+    if (!w) { toast('Allow pop-ups to see the summary plot'); return; }
+    var swatches = [0.05, 0.25, 0.5, 0.75, 1].map(function (v) {
+      return '<i style="background:' + SV.summaryPlot.shade(v) + '"></i>';
+    }).join('');
+    w.document.open();
+    w.document.write(
+      '<!doctype html><meta charset="utf-8"><title>' + SV.escapeHtml(title) + '</title>' +
+      '<style>' +
+      'body{margin:0;padding:18px;background:#fff;color:#1b2430;' +
+      'font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}' +
+      'h1{font-size:14px;margin:0 0 2px}' +
+      'p{margin:0 0 12px;color:#4a5260}' +
+      '.key{display:flex;align-items:center;gap:6px;margin:12px 0 0;font-size:11px;color:#4a5260}' +
+      '.key i{width:20px;height:11px;display:block}' +
+      'img{display:block;max-width:100%}' +
+      'a{color:#2a78d6}' +
+      '</style>' +
+      '<h1>' + SV.escapeHtml(title) + '</h1>' +
+      '<p>Each row is scaled to its own peak, so colours compare wavelengths within ' +
+      'a fluorophore and not one fluorophore against another. Hatched cells are ' +
+      'wavelengths nobody measured.</p>' +
+      '<img src="' + cv.toDataURL('image/png') + '" width="' + (cv.width / 2) +
+      '" alt="' + SV.escapeHtml(title) + '">' +
+      '<div class="key"><span>low</span>' + swatches + '<span>own peak</span></div>' +
+      '<p style="margin-top:12px"><a download="' +
+      (commonOnly ? 'common' : 'all') + '-fluorophores-summary.png" href="' +
+      cv.toDataURL('image/png') + '">Save this image</a></p>');
+    w.document.close();
+  }
+
+  /* -- downloading a panel ------------------------------------------------
+   *
+   * The picture and the numbers behind it, zipped together. Read straight off
+   * the chart's own series, so whatever is plotted is what is written: the
+   * fluorophore curves, and on the excitation panel the laser power and
+   * suitability traces too, on the emission panel the filters.
+   *
+   * Sampled at 1 nm over the panel's full range, not the zoomed view - a zoom is
+   * a way of looking at the chart, not a statement about which data you wanted.
+   */
+  function panelCSV(key) {
+    var c = charts[key];
+    var series = (c.series || []).filter(function (s) { return s.curve; });
+    if (!series.length) return null;
+    var lo = Math.round(c.opts.xMin), hi = Math.round(c.opts.xMax);
+    var head = ['wavelength_nm'].concat(series.map(function (s) {
+      return String(s.label).replace(/[,"\n]/g, ' ');
+    }));
+    var rows = [head.join(',')];
+    for (var wl = lo; wl <= hi; wl++) {
+      var row = [wl];
+      series.forEach(function (s) {
+        // blank rather than zero outside a curve's measured range: the
+        // difference between "no signal" and "nobody measured" matters
+        row.push(wl < s.curve.x0 || wl > s.curve.x1 ? '' : round4(s.curve.at(wl)));
+      });
+      rows.push(row.join(','));
+    }
+    return rows.join('\n') + '\n';
+  }
+
+  function round4(v) { return Math.round(v * 1e4) / 1e4; }
+
+  function panelName(key) {
+    return key === 'exc' ? 'two-photon-excitation' : 'emission-and-filters';
+  }
+
+  /* What the CSV's numbers mean, since the columns alone do not say. */
+  function panelReadme(key) {
+    var when = new Date().toISOString().slice(0, 10);
+    var lines = [
+      'BrainSaw excitation and emission tool — ' + panelName(key),
+      'Exported ' + when,
+      '',
+      'chart.png   the panel as displayed',
+      'data.csv    one row per nm, one column per curve on the panel',
+      '',
+    ];
+    if (key === 'exc') {
+      lines.push(
+        'Fluorophore columns are ' + (state.excUnits === 'gm'
+          ? 'action cross-sections in GM.'
+          : 'relative to each fluorophore’s own peak.'),
+        'The two-photon data source is named in each column heading; see',
+        '"Data & provenance" on the page for what each source is.',
+        'Laser power is relative to that laser’s peak output.',
+        'Suitability is this tool’s own score, not a measurement.');
+    } else {
+      lines.push(
+        'Fluorophore columns are emission spectra relative to their own peak.',
+        'Filter columns are transmission, 0 to 1.');
+    }
+    lines.push('', 'Empty cells are wavelengths where that curve has no data.');
+    return lines.join('\n') + '\n';
+  }
+
+  function downloadPanel(key) {
     var c = charts[key];
     if (!c) return;
+    var csv = panelCSV(key);
+    if (!csv) { toast('Nothing plotted yet'); return; }
+    var name = panelName(key);
+    var blob = SV.zip([
+      { name: name + '/chart.png', data: SV.zipFromDataURL(c.toPNG(2)) },
+      { name: name + '/data.csv', data: SV.zipText(csv) },
+      { name: name + '/README.txt', data: SV.zipText(panelReadme(key)) },
+    ]);
     var a = document.createElement('a');
-    a.href = c.toPNG(2);
-    a.download = (key === 'exc' ? 'two-photon-excitation' : 'emission-and-filters') + '.png';
+    a.href = URL.createObjectURL(blob);
+    a.download = name + '.zip';
     a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Saved ' + a.download);
   }
 
   /* ------------------------------------------------------------ url state */
@@ -1801,9 +1895,10 @@
     });
 
     // buttons
-    $('btn-csv').addEventListener('click', downloadCSV);
-    document.querySelectorAll('[data-png]').forEach(function (b) {
-      b.addEventListener('click', function () { downloadPNG(b.dataset.png); });
+    $('btn-summary-common').addEventListener('click', function () { openSummary(true); });
+    $('btn-summary-all').addEventListener('click', function () { openSummary(false); });
+    document.querySelectorAll('[data-download-panel]').forEach(function (b) {
+      b.addEventListener('click', function () { downloadPanel(b.dataset.downloadPanel); });
     });
     document.querySelectorAll('[data-reset-zoom]').forEach(function (b) {
       b.addEventListener('click', function () {

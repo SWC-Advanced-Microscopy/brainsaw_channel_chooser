@@ -330,6 +330,48 @@
           ' on — it reaches the 1052 nm peak that the rest of your rig does not.' : '') });
     }
 
+    /* --- what experience says ----------------------------------------------
+     * From notes/fluorophore_notes.md. These are things people here have found
+     * at the microscope rather than anything the model can work out, so they
+     * state the fact and stop: no suggested alternatives, no reasoning.
+     */
+    var picked = ctx.selection || [];
+    var has = function (id) {
+      return picked.some(function (s) { return s.fluor.id === id; });
+    };
+    var family = function (f) {
+      return picked.filter(function (s) { return s.fluor.family === f; });
+    };
+
+    var farRed = family('farred');
+    if (farRed.length) {
+      var didToo = has('did');
+      items.push({ kind: 'warn', text:
+        list(farRed.map(name)) + (farRed.length > 1 ? ' are far red. Far-red' : ' is far red. Far-red') +
+        ' fluorophores bleach quickly, which shows up as tiling artefacts in the ' +
+        'overlap regions. They also tend to look worse under two-photon excitation ' +
+        'than under one photon' + (didToo ? ', DiD being the exception.' : '.') });
+    }
+
+    if (has('irfp670')) {
+      items.push({ kind: 'info', text:
+        'iRFP670 looks good at 880 nm in a far-red channel, and should look better at ' +
+        '850 nm, where its peak is. It bleaches quickly.' });
+    }
+
+    if (has('tdtomato')) {
+      items.push({ kind: 'info', text:
+        'tdTomato is more efficient at 1040 nm than at 920 nm, but the laser puts out ' +
+        'much less power there. With good expression you get the same signal either way, ' +
+        'because the fluorophore saturates. With weak expression — cFos-driven, say — ' +
+        '920 nm can give you almost nothing while 1040 nm is fine.' });
+    }
+
+    if (has('egfp') && has('ebfp2') && has('mcherry')) {
+      items.push({ kind: 'info', text:
+        'A common three-colour combination, usually excited around 780 nm.' });
+    }
+
     /* --- fluorophores with no 2p data -------------------------------------- */
     (ctx.selection || []).forEach(function (s) {
       if (!s.twopCurve) {

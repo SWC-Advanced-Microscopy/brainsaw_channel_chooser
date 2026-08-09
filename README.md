@@ -109,6 +109,44 @@ page loads that microscope and remembers it. `matlab/channelChooserURL.m` is a
 reference implementation of the encoding side — point it at a config file in the
 BakingTray `SETTINGS` directory and it opens the browser on that rig.
 
+
+## Getting the data out
+
+Each chart's download button hands over the picture **and** the numbers behind
+it, zipped: `chart.png`, a `data.csv` with one row per nm and one column per
+curve on that panel, and a short `README.txt` saying what the columns are. The
+CSV is read off the chart's own series, so whatever is plotted is what is
+written — the fluorophore curves, and with them the laser power and suitability
+traces, or the filters. It samples the panel's full range rather than the zoomed
+view, since a zoom is a way of looking rather than a statement about what you
+wanted. Cells are left empty where a curve has no data, which is not the same as
+zero.
+
+The buttons live with the charts, which is where someone looking at a plot will
+reach for them. "Data & provenance" used to hold a table of two-photon values at
+10 nm steps; the download replaces it.
+
+The zip is written by hand in `js/zip.js` — stored entries, no compression, no
+dependency. A PNG is already compressed and the CSVs are tens of kB, so there is
+nothing to gain by deflating and about eighty lines to lose.
+
+## The summary plot
+
+Two buttons in the rail open a window showing every fluorophore at once: rows are
+fluorophores, columns are 20 nm bins of excitation wavelength from 760 to 1080
+nm, each row scaled to its own peak and named in its own emission colour. It answers "what could
+I excite around here", which the line chart cannot — forty curves on one pair of
+axes is a ball of wool. Three blocks, separated by a few pixels: proteins, Alexa
+dyes, tracers. dTomato is left out — it is tdTomato's curve halved, so scaled to
+its own peak it is the same row twice.
+
+Nothing is interpolated across a bin that the data does not resolve. Each
+measurement speaks for the wavelengths nearer to it than to its neighbours, and
+at the ends for one bin and no further, so a dye measured every 60 nm paints
+three bins of one colour and a dye measured last at 920 nm says nothing about
+960. Hatched cells are wavelengths nobody measured, which the chart's own
+interpolation would otherwise paper over.
+
 ## Deploying
 
 Copy this directory into the GitHub Pages site at `/channel-chooser/` and link
@@ -437,6 +475,9 @@ js/curves.js        curve unpacking, interpolation, integration, wavelength colo
 js/chart.js         the canvas chart engine
 js/optics.js        detection model, recommender, channel planner
 js/advice.js        turns the model's numbers into sentences
+js/summary.js       the binned all-fluorophore heatmap
+js/zip.js           a zip file, written by hand, for the downloads
+notes/              things learned at the microscope, quoted in the advice
 configs/            built-in microscopes, vendored into data/ by the build
 matlab/             reference MATLAB for the BakingTray handoff
 claude/             the brief this was built from

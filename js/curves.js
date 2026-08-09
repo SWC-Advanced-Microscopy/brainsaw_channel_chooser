@@ -134,11 +134,13 @@
 
   /* Saturated, mid-lightness version of the spectral hue - raw wavelength RGB
    * is too dark at the ends and too pale in the middle to use as a line colour. */
-  function wavelengthLine(wl, dark) {
+  function wavelengthLine(wl, dark, lightness) {
     var rgb = wavelengthRGB(wl);
     var hsl = rgbToHsl(rgb[0], rgb[1], rgb[2]);
     var sat = Math.max(0.62, Math.min(0.9, hsl[1]));
-    var light = dark ? 0.62 : 0.45;
+    // `lightness` is for small text, where the yellows and greens that read
+    // fine as a 2 px line are too pale to be words on white
+    var light = lightness != null ? lightness : (dark ? 0.62 : 0.45);
     return hslToCss(hsl[0], sat, light);
   }
 

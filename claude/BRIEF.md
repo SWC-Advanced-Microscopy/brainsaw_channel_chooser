@@ -433,3 +433,45 @@ Now I try tunable laser (Mai Tai) plus an Axon 1060
 
 **An additional note**
 The eGFP plus tomato case is unclear. I don't have data. 940 nm could be fine or it might need the extra line to boost the tomato. So give the user those choices. 940 nm is more simple. So you can say: "940 nm is the optimal with one line, but if the tomato signal is suspected to be weak, 920 nm plus 1064 nm might give better overall results". Just make it obvious that those are the two clear choices. Then the user can choose. Remember: these proteins are being expressed in the brain. If expression is good there is LOTS of protein = big signal. Low expression and we have problems. We don't know the situation here, making our webpage. Only the user does.
+
+
+## Downloads, notes, and a summary plot
+
+The next set of instructions, as I understood them.
+
+### Downloading the data, not just the picture
+Each chart already has a download button that saves a PNG. Both should instead
+hand over the picture *and* the numbers behind it, zipped together, with the
+hover text reading "Download image and data". If a zip cannot be produced in the
+browser then fall back to plain buttons under "Data & provenance", one for the
+excitation panel's data and one for the emission panel's.
+
+Either way, put those buttons in the **collapsed** "Data & provenance" panel, so
+that the download is visible without expanding anything, and keep them in the
+expanded view. The large table of two-photon values in the expanded panel goes:
+it is redundant once the data can be downloaded.
+
+Drop the "Download CSV" button from "Channel assignment" as well. Nobody is
+going to download that. The panel stays — it is worth looking at — but it does
+not drive anyone's choice.
+
+### Notes on fluorophores
+`notes/fluorophore_notes.md` holds qualitative notes, and they belong in the
+page. Pick a far-red fluorophore and the page should say what follows from that.
+State the facts and stop: no suggested alternatives, no explaining things the
+user already knows, and in a plainer voice than I have been using — the edit made
+to the background note in `app.js` is the register to write in.
+
+### A summary colour plot
+A small new rail panel with two buttons, each opening a **pop-up window** holding
+a heatmap the user can look at and close.
+
+- Rows are fluorophores, columns are excitation wavelength in **20 nm bins**,
+  with **longer wavelengths on the left** and shorter on the right.
+- One button for the common fluorophores, in the order the list shows them; one
+  for all of them. Both in relative units.
+- Where the underlying data is coarser than 20 nm, do not interpolate — that
+  would be inventing numbers. A point measured every 60 nm fills three 20 nm bins
+  centred as near as possible on the measurement.
+- Three separate plots, stacked with a 4-5 px gap: proteins, Alexa dyes,
+  tracers. No titles needed — the row labels say what each one is.
