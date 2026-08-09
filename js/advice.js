@@ -323,9 +323,10 @@
       items.push({ kind: 'info', text:
         'dTomato is the single unit that tdTomato is built from: tdTomato links two of ' +
         'them head to tail, so for the same number of molecules it absorbs about twice as ' +
-        'much light. That is why tdTomato is the one people use. There is no published ' +
-        'two-photon spectrum for dTomato, so what is plotted is tdTomato’s curve at half ' +
-        'the cross-section — an estimate, not a measurement.' +
+        'much light. There is no published two-photon spectrum for dTomato, so what is ' +
+        'plotted is tdTomato’s curve at half the cross-section — an estimate, not a ' +
+        'measurement. With half the cross-section it is worth working closer to the ' +
+        '1052 nm peak if your rig reaches it, and averaging more frames.' +
         (longLine ? ' With half the signal to work with, switch the ' + longLine.name +
           ' on — it reaches the 1052 nm peak that the rest of your rig does not.' : '') });
     }
@@ -360,11 +361,45 @@
     }
 
     if (has('tdtomato')) {
-      items.push({ kind: 'info', text:
-        'tdTomato is more efficient at 1040 nm than at 920 nm, but the laser puts out ' +
-        'much less power there. With good expression you get the same signal either way, ' +
-        'because the fluorophore saturates. With weak expression — cFos-driven, say — ' +
-        '920 nm can give you almost nothing while 1040 nm is fine.' });
+      /* Whether the red end costs you power is a fact about the laser, not about
+       * tdTomato. A Ti:Sapphire is running out of gain up there and gives about a
+       * fifth of its 920 nm output at 1040; an OPO or an OPCPA gives roughly
+       * seven eighths of it, and a fixed 1064 line sits on that part of the curve
+       * to begin with. Saying "the laser puts out much less power there"
+       * regardless would be wrong on half the rigs this page knows about. */
+      var RED = 1040, FULL = 0.6;
+      var onNow = (plan && plan.on) ? plan.on : (ctx.rig || [laser]);
+      var redLine = (ctx.rig || onNow).filter(function (l) {
+        return l.tunable === false && l.range[0] >= 1000;
+      })[0];
+      var tuner = null;
+      onNow.forEach(function (l) {
+        if (l.tunable === false || !l._power) return;
+        var top = Math.min(RED, l.range[1]);
+        if (top < 1000) return;                    // does not get up there at all
+        var at920 = l._power.at(920);
+        var r = at920 > 0 ? l._power.at(top) / at920 : 0;
+        if (!tuner || r > tuner.r) tuner = { laser: l, r: r, wl: Math.round(top) };
+      });
+
+      var opening = null;
+      if (redLine) {
+        opening = 'tdTomato is more efficient at 1040 nm than at 920 nm, and your ' +
+          redLine.name + ' sits on that part of the curve.';
+      } else if (tuner && tuner.r >= FULL) {
+        opening = 'tdTomato is more efficient at ' + tuner.wl + ' nm than at 920 nm, and ' +
+          'your ' + tuner.laser.name + ' has the power to drive it there.';
+      } else if (tuner) {
+        opening = 'tdTomato is more efficient at ' + tuner.wl + ' nm than at 920 nm, but ' +
+          'your ' + tuner.laser.name + ' puts out about ' + pct(tuner.r) + ' of its ' +
+          '920 nm power there.';
+      }
+      if (opening) {
+        items.push({ kind: 'info', text: opening +
+          ' With good expression you get the same signal either way, because the ' +
+          'fluorophore saturates. With weak expression — cFos-driven, say — 920 nm can ' +
+          'give you almost nothing while ' + (redLine ? '1040' : tuner.wl) + ' nm is fine.' });
+      }
     }
 
     if (has('egfp') && has('ebfp2') && has('mcherry')) {
