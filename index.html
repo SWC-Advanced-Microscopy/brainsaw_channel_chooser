@@ -67,7 +67,7 @@
     </section>
 
     <section class="rail-block">
-      <h2>Summary plot</h2>
+      <h2>Summary plots</h2>
       <div class="row-actions">
         <button class="btn small" id="btn-summary-common">Common</button>
         <button class="btn small ghost" id="btn-summary-all">All</button>
@@ -161,11 +161,19 @@
 
     <section class="card hero" id="recommendation" aria-live="polite">
       <div class="hero-empty" id="hero-empty">
-        <h2>Pick your fluorophores</h2>
+        <h2>Getting started</h2>
         <p>
-          Select what you are imaging and this will overlay the two-photon excitation
-          spectra, show where the emission lands in your filter set, and suggest a
-          wavelength to tune to.
+          Select your fluorophores from the panel on the left (uncheck &ldquo;Show common
+          only&rdquo; if necessary). The app will provide a suggested excitation wavelength
+          along with relevant discussion and alternatives. You can move the blue excitation
+          wavelength marker to explore other wavelengths manually. Suggested channels to
+          acquire are shown below the excitation graph. The left panel also
+          provides See &ldquo;Summary plots&rdquo; plots of all fluorophores on one graph.
+        </p>
+        <p>
+          By default a 4 channel rig with a Mai Tai eHP DS is assumed. You can change the
+          filter specs and laser via the left panel, then export your setup with the &ldquo;Save config&rdquo;
+          button in the header for later re-use. The last used config will persist across browser sessions even if unexported.
         </p>
       </div>
       <div class="hero-body" id="hero-body" hidden>

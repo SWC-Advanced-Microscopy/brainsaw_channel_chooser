@@ -338,9 +338,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
 /* ---------------------------------------------------------- hero card */
 .hero { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); }
-.hero-empty { padding: 26px 20px 24px; max-width: 60ch; }
+.hero-empty { padding: 26px 20px 24px; }
 .hero-empty h2 { font-size: 17px; margin-bottom: 6px; }
 .hero-empty p { color: var(--text-secondary); }
+.hero-empty p + p { margin-top: 10px; }
 .hero-body { display: flex; gap: 28px; flex-wrap: wrap; padding: 18px 18px 6px; }
 .hero-main { flex: 0 1 300px; }
 .hero-kicker { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }

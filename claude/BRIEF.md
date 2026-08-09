@@ -475,3 +475,18 @@ a heatmap the user can look at and close.
   centred as near as possible on the measurement.
 - Three separate plots, stacked with a 4-5 px gap: proteins, Alexa dyes,
   tracers. No titles needed — the row labels say what each one is.
+
+
+
+## References
+The page should close with a list of references, as some of these data came from people's papers. 
+Also, the reader needs to know where to go for further information. 
+
+Currently the text reads:
+_[SWC Advanced Microscopy](https://swcmicroscopy.com/). Spectra from [FPbase](https://fpbase.org) (CC-BY-SA), Drobizhev et al. 2011 and the Zipfel lab at Cornell. Filter curves via FPbase._
+
+Change it to
+_[SWC Advanced Microscopy](https://swcmicroscopy.com/). Filter curves and some spectra from [FPbase](https://fpbase.org). Relevant papers (some of which contributed data)
+* [Drobizhev et al. 2011](https://pmc.ncbi.nlm.nih.gov/articles/PMC4772972/)
+* [Mütze et al. 2012](https://pmc.ncbi.nlm.nih.gov/articles/PMC3283774/)
+* [Zipfel lab 2-photon spectra](http://www.drbio.cornell.edu/TwoPhotonXsec.html)
