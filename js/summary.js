@@ -24,6 +24,8 @@
   var AXIS_H = 30;
   var TOP_AXIS_H = 18;   // the same scale again above the first block
 
+  /* The column edges: [[760, 780], [780, 800], …] across LO..HI. One place to
+   * change the resolution of the whole plot. */
   function bins() {
     var out = [];
     for (var x = LO; x + BIN <= HI + 0.5; x += BIN) out.push([x, x + BIN]);
@@ -75,6 +77,7 @@
     return 'rgb(' + r + ',' + g + ',' + b + ')';
   }
 
+  /* Ink that stays legible on shade(v) - white once the fill is dark enough. */
   function textFor(v) { return v > 0.62 ? '#ffffff' : '#1b2430'; }
 
   /* One wavelength scale. `dir` is +1 for the axis under the last block and -1
@@ -100,7 +103,12 @@
     });
   }
 
-  /* groups: [{ rows: [{ name, curve, sparse }] }] */
+  /* Draw the whole plot onto a new canvas and return it, ready to be turned
+   * into a PNG. Nothing is added to the document, and nothing is interactive.
+   *
+   * groups: [{ rows: [{ name, curve, sparse, color }] }] - one block per group,
+   * drawn in order with a gap between them. opts.scale is the pixel density,
+   * 2 for a crisp image in a popup window or a saved file. */
   function draw(groups, opts) {
     var cols = bins();
     var scale = opts.scale || 2;

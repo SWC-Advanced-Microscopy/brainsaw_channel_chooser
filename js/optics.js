@@ -100,7 +100,11 @@
     return total > 0 ? captured / total : 0;
   }
 
-  /* Per-fluorophore channel breakdown plus the normalised bleed-through row. */
+  /* Per-fluorophore channel breakdown plus the normalised bleed-through row.
+   * One row per fluorophore: `eff` what each channel captures, `frac` the same
+   * as shares of that fluorophore's detected light, `total` how much of it is
+   * seen at all, `best` its strongest channel and `purity` that channel's
+   * share. */
   function channelBreakdown(fluorophores, channels, filters) {
     var throughputs = channels.map(function (c) {
       return channelThroughput(c, filters);
@@ -125,7 +129,11 @@
   }
 
   /* Pairs of fluorophores that land in the channels in near-identical
-   * proportions, i.e. that cannot be told apart by this filter set. */
+   * proportions, i.e. that cannot be told apart by this filter set. Takes the
+   * rows from channelBreakdown and compares their `frac` vectors by cosine
+   * similarity, reporting anything above 0.9, worst first. Direction and not
+   * magnitude, because two dyes in the same proportions are inseparable however
+   * bright either one is. */
   function separability(rows) {
     var out = [];
     for (var i = 0; i < rows.length; i++) {
@@ -184,6 +192,11 @@
    * wavelength becomes the anatomy channel - you always want one alongside your
    * signal channels. If nothing is left over, that is reported rather than
    * papered over: the choice has been made for you.
+   *
+   * `rows` from channelBreakdown, `centres` the passband centre of each channel
+   * in the same order as `channels`, `wl` the excitation wavelength the
+   * background is judged at, `minCapture` the share of its emission a
+   * fluorophore must land in a channel before it counts as detected.
    */
   function planChannels(rows, channels, centres, wl, minCapture) {
     minCapture = minCapture == null ? 0.02 : minCapture;
@@ -258,6 +271,8 @@
    * two score within a hair of each other. */
   var CONVENTIONAL_WL = [760, 780, 800, 840, 880, 920, 940, 960, 980, 1000, 1040];
 
+  /* How round a wavelength is, 0 to 3. Feeds the tie-break in recommend(); it
+   * is a sort key worth a few per cent, never a reason to take a worse answer. */
   function niceness(wl) {
     if (CONVENTIONAL_WL.indexOf(wl) >= 0) return 3;
     if (wl % 50 === 0) return 2;
@@ -282,6 +297,9 @@
   var NICE_BONUS = 0.03;   // how much a conventional wavelength is worth
   var MAX_COMBOS = 50000;
 
+  /* Cartesian product of one wavelength grid per laser: every combination of
+   * what each beam could be tuned to. Capped at MAX_COMBOS, which two lasers on
+   * a 2 nm grid come nowhere near. */
   function combos(grids) {
     var out = [[]];
     for (var i = 0; i < grids.length; i++) {
@@ -392,7 +410,15 @@
     };
     var allSaturating = usable.every(function (s) { return s.sat; });
 
-    /* One wavelength vector, one row of numbers. */
+    /* Score one wavelength per laser. `wls` is in the same order as `lasers`;
+     * everything the page shows about a wavelength comes out of here, and it is
+     * handed back on the result so a dragged marker is scored the same way.
+     *
+     * Returns: obj the objective (balanced or averaged), tot their sum, per the
+     * per-fluorophore scores, raw the same before the anatomy penalty, contrib
+     * what each beam gave each fluorophore, from which pass each one uses in
+     * sequential mode, ctx the anatomy penalty applied, clears whether every
+     * tracer is over its sufficiency level, and beams the per-laser power. */
     function evalVec(wls) {
       var pw = [], ctxWl = Infinity;
       for (var i = 0; i < lasers.length; i++) {
@@ -640,6 +666,8 @@
     };
   }
 
+  /* Four decimal places, so the score curve packs into a share link without
+   * carrying float noise nobody can read. */
   function round4(v) { return Math.round(v * 1e4) / 1e4; }
 
   SV.optics = {

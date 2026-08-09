@@ -68,6 +68,8 @@
 
   /* ------------------------------------------------------------- setup */
 
+  /* Turn the packed arrays in data/ into Curve objects, once at boot. Everything
+   * afterwards reads the _-prefixed fields and never touches the raw data. */
   function prepare() {
     CORE.fluorophores.forEach(function (f) {
       byId[f.id] = f;
@@ -88,6 +90,7 @@
     });
   }
 
+  /* A laser record by id, or null. */
   function laserById(id) {
     return CORE.lasers.filter(function (l) { return l.id === id; })[0] || null;
   }
@@ -107,6 +110,7 @@
     return on.length ? on : [all[0]];
   }
 
+  /* Is this laser record currently switched on? */
   function laserIsOn(l) {
     return activeLasers().indexOf(l) >= 0;
   }
@@ -132,6 +136,9 @@
   var LS_SAVED = 'sv.microscopes';
   var LS_LAST = 'sv.last-microscope';
 
+  /* localStorage as JSON, with every failure - private mode, quota, junk left
+   * by an older version - falling back rather than throwing. Nothing kept here
+   * is important enough to break the page over. */
   function lsGet(key, fallback) {
     try {
       var raw = window.localStorage.getItem(key);
@@ -142,16 +149,22 @@
     try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private mode */ }
   }
 
+  /* The rigs this machine has saved or imported. */
   function savedScopes() {
     var v = lsGet(LS_SAVED, []);
     return Array.isArray(v) ? v : [];
   }
+  /* Those plus the built-in BrainSaws: everything the dropdown offers. */
   function scopeLibrary() {
     return CORE.scopes.concat(savedScopes());
   }
+  /* A rig by id, falling back to the first built-in rather than to nothing -
+   * a share link naming a rig this machine has never seen still has to open. */
   function scopeById(id) {
     return scopeLibrary().filter(function (s) { return s.id === id; })[0] || CORE.scopes[0];
   }
+  /* The rig as it was loaded, which is not the same as the rig as it now
+   * stands - channels can be edited. Used by "Reset" to get back. */
   function scope() { return scopeById(state.scopeId); }
 
   /* The rig as it stands, in config form. */
@@ -182,6 +195,8 @@
     return ch.spectrum || null;
   }
 
+  /* Load a config object - from a file, a #cfg= handoff, or currentConfig() -
+   * resolving each channel's filter as it goes. */
   function applyConfig(cfg) {
     loadScope({
       id: cfg.id || 'imported-' + Date.now().toString(36),
@@ -201,15 +216,22 @@
     list.push(cfg);
     lsSet(LS_SAVED, list);
   }
+  /* Drop a saved rig from this machine. The file the user downloaded is theirs
+   * and is not touched. */
   function forgetScope(id) {
     lsSet(LS_SAVED, savedScopes().filter(function (s) { return s.id !== id; }));
   }
+  /* Is this rig one of the ones saved here, i.e. is there anything to forget? */
   function isSaved(id) {
     return savedScopes().some(function (s) { return s.id === id; });
   }
+  /* Which way the theme resolved, 'auto' included - the charts need to know
+   * which end of the lightness range their colours should come from. */
   function isDark() {
     return document.documentElement.dataset.resolvedTheme === 'dark';
   }
+  /* The bundled filters plus any pulled from the library at runtime, as one
+   * lookup by id. */
   function allFilters() {
     return Object.assign({}, filters, extraFilters);
   }
@@ -228,6 +250,9 @@
     return effCache[key];
   }
 
+  /* Make `sc` the current rig: its channels, its blocking filter and its
+   * lasers, with everything switched on and the marker back on the suggestion.
+   * The single door through which a rig change goes. */
   function loadScope(sc) {
     state.scopeId = sc.id;
     state.scopeName = sc.name;
@@ -264,6 +289,8 @@
     var wl = f.emMax || (f.twop && firstPeak(f) ? firstPeak(f) / 2 : 520);
     return SV.wavelengthLine(clamp(wl, 400, 700), isDark());
   }
+  /* The 2p peak from whichever source this fluorophore lists first - enough for
+   * the "920 nm" note in the list, where the exact source does not matter. */
   function firstPeak(f) {
     var k = Object.keys(f.twop)[0];
     return k ? f.twop[k].peakWl : null;
@@ -285,6 +312,7 @@
     return centreCache[fid];
   }
 
+  /* A channel's swatch: the hue of the light its filter passes. */
   function filterColor(fid) {
     var centre = filterCentre(fid);
     if (centre == null) return 'var(--text-muted)';
@@ -292,6 +320,7 @@
   }
 
   function clamp(v, a, b) { return Math.min(Math.max(v, a), b); }
+  /* A 0..1 fraction as a percentage, to `dp` decimal places (default none). */
   function pct(v, dp) { return (v * 100).toFixed(dp == null ? 0 : dp) + '%'; }
 
   /* Some curves are a handful of measured points rather than a spectrum. Say so
@@ -325,6 +354,11 @@
     return sel.every(function (s) { return s.gmCurve; }) ? 'gm' : 'norm';
   }
 
+  /* The chosen fluorophores as the rest of the app wants them: the record, the
+   * curves for the source in force, its peak, and the colour to draw it in.
+   * Rebuilt on every render rather than kept in state, so it can never be a
+   * stale copy of what is selected. This is the `selection` that optics.js and
+   * advice.js are handed. */
   function buildSelection() {
     return state.selected.map(function (entry) {
       var f = byId[entry.id];
@@ -347,9 +381,16 @@
 
   /* --------------------------------------------------------- rendering */
 
+  /* getElementById, remembered. The markup is static, so an element found once
+   * is the same element for the life of the page. */
   var el = {};
   function $(id) { return el[id] || (el[id] = document.getElementById(id)); }
 
+  /* Redraw the entire page from state. Cheap enough to be the default response
+   * to any change, which is what keeps the panels from drifting apart: there is
+   * no partial update path to get wrong. The finer-grained renderers below are
+   * called directly only where the work is obviously local (typing in the
+   * search box, toggling a legend entry). */
   function renderAll() {
     renderFluorList();
     renderSelected();
@@ -364,6 +405,8 @@
   }
 
   /* -- fluorophore list -------------------------------------------------- */
+  /* The colour-family filter chips. Built once at boot; their pressed state is
+   * kept on the buttons themselves rather than by rebuilding the row. */
   function renderFamilyChips() {
     var wrap = $('family-filters');
     wrap.innerHTML = '';
@@ -382,6 +425,8 @@
     });
   }
 
+  /* The fluorophores the list should show: the common-only switch, the family
+   * chips and the search box, in that order. */
   function visibleFluorophores() {
     var q = state.search.trim().toLowerCase();
     var famOn = Object.keys(state.families).filter(function (k) { return state.families[k]; });
@@ -399,6 +444,8 @@
     });
   }
 
+  /* The pick list itself: a row per fluorophore with its colour, 2p peak and
+   * the letters of the sources that have data for it. */
   function renderFluorList() {
     var list = $('fluor-list');
     var items = visibleFluorophores();
@@ -431,6 +478,9 @@
       (noTwoP ? ' · ' + noTwoP + ' without 2p data' : '');
   }
 
+  /* Add or remove a fluorophore. Also drops any hand-dragged wavelength: the
+   * suggestion has just changed, so holding the old marker would be showing an
+   * answer to the previous question. */
   function toggleFluor(id) {
     var i = state.selected.findIndex(function (s) { return s.id === id; });
     if (i >= 0) state.selected.splice(i, 1);
@@ -440,6 +490,8 @@
   }
 
   /* -- selected list ----------------------------------------------------- */
+  /* The chosen list, each row carrying a per-fluorophore source switch (D/Z/M/
+   * E/F) so one dye can be read off Drobizhev while another comes from Zipfel. */
   function renderSelected() {
     var list = $('selected-list');
     list.innerHTML = '';
@@ -482,6 +534,8 @@
   }
 
   /* -- channels ---------------------------------------------------------- */
+  /* The rig's detection channels, each with the filter it carries and buttons
+   * to swap or remove it. */
   function renderChannels() {
     var list = $('channel-list');
     var fl = allFilters();
@@ -518,6 +572,8 @@
 
   }
 
+  /* A filter's name without the vendor in front, for places where the row
+   * already says whose it is. */
   function shortName(n) { return n.replace(/^(Semrock|Chroma|Alluxa|Omega|Thorlabs)\s+/, ''); }
 
   /* -- rail: lasers ------------------------------------------------------ */
@@ -531,6 +587,9 @@
       note: 'Image once with each laser and merge, so every fluorophore gets the beam that suits it.' },
   ];
 
+  /* The laser rail: one row per fitted laser, with its model, its range, an
+   * ON/OFF switch, a Tune button that points the marker at it, and a remove
+   * button. Below them the combine mode, which only appears once two are on. */
   function renderLasers() {
     var list = $('laser-list');
     var all = rigLasers();
@@ -644,6 +703,9 @@
   }
 
   /* -- charts ------------------------------------------------------------ */
+  /* Build the two charts, once. Everything that changes afterwards goes in
+   * through setSeries/setZones/setMarkers - the chart objects themselves live
+   * as long as the page does. */
   function makeCharts() {
     charts.exc = new SV.Chart($('chart-exc'), {
       xMin: EXC_LO, xMax: EXC_HI, yMin: 0, yMax: 1,
@@ -674,11 +736,16 @@
     });
   }
 
+  /* Show a panel's "reset zoom" button only while it is zoomed. */
   function syncZoomBtn(key, c) {
     var b = document.querySelector('[data-reset-zoom="' + key + '"]');
     if (b) b.hidden = !c.isZoomed();
   }
 
+  /* Rebuild both charts from state: the excitation panel's curves, overlays,
+   * shaded regions and beam markers, then the emission panel's filter bands and
+   * emission curves, then the legend. The whole of the page's plotting lives
+   * here - the Chart objects are told what to draw and decide nothing. */
   function renderCharts() {
     var sel = buildSelection();
     var dark = isDark();
@@ -841,10 +908,14 @@
     renderLegend(emSeries);
   }
 
+  /* One CSS custom property off the root element, for the few colours the
+   * charts need that do not come from the data. */
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888';
   }
 
+  /* The emission chart's legend. Each entry is a button that hides or shows its
+   * series, so the legend is the control as well as the key. */
   function renderLegend(series) {
     var wrap = $('legend');
     wrap.innerHTML = '';
@@ -864,6 +935,7 @@
   }
 
   /* -- recommendation ---------------------------------------------------- */
+  /* The rail's settings in the shape optics.recommend() wants. */
   function recOpts() {
     return {
       mode: state.objective,
@@ -873,6 +945,10 @@
       minWl: state.minWl,
     };
   }
+  /* The recommendation for what is currently selected, memoised on everything
+   * that could change it. Several panels ask for it during one render and the
+   * search is a few thousand evaluations, so this is the one place in the page
+   * where caching earns its keep. */
   var _recCache = null, _recKey = '';
   function currentRec(sel) {
     var key = JSON.stringify([state.selected.map(sourceFor), state.selected.map(function (s) { return s.id; }),
@@ -946,11 +1022,16 @@
     return plan;
   }
 
+  /* The wavelength the page is describing: wherever the user dragged the
+   * marker, or the suggestion if they have not. */
   function chosenWavelength(rec) {
     if (state.chosenWl != null) return state.chosenWl;
     return rec && rec.best ? rec.best.wl : null;
   }
 
+  /* Where each selected fluorophore's emission lands across the channels.
+   * Refreshes each channel's effective curve first, since the blocking filter
+   * or a filter swap may have moved it. */
   function breakdown(sel) {
     state.channels.forEach(function (ch) { ch._curve = channelCurve(ch); });
     return SV.optics.channelBreakdown(
@@ -958,6 +1039,11 @@
       state.channels, allFilters());
   }
 
+  /* Everything above the charts, and the two panels that hang off it: the
+   * headline wavelength and what it is a compromise between, the per-beam
+   * breakdown, the alternative configurations, the per-fluorophore bars, the
+   * channels to acquire, and the written advice. All of it describes the
+   * wavelength the marker is on, not necessarily the one suggested. */
   function renderRecommendation() {
     var sel = buildSelection();
     var rec = currentRec(sel);
@@ -1191,6 +1277,11 @@
   }
 
   /* -- channels to acquire ----------------------------------------------- */
+  /* The "Channels to acquire" panel: a row per channel saying whether it is
+   * carrying signal, standing in for anatomy or not worth recording, with a bar
+   * for how much background it sees at `wl`. Any detection problems -
+   * fluorophores that barely register, pairs the filters cannot separate - are
+   * listed above it. */
   function renderAcquire(plan, wl, bd, sel) {
     var list = $('acquire-list');
     var warnBox = $('acquire-warnings');
@@ -1254,6 +1345,9 @@
   }
 
   /* -- matrix ------------------------------------------------------------ */
+  /* The bleed-through table: rows of fluorophores, columns of channels, each
+   * cell the share of that dye's detected light landing there, and a final
+   * column for how much of its emission is caught at all. */
   function renderMatrix() {
     var sel = buildSelection();
     var tbl = $('matrix');
@@ -1287,6 +1381,10 @@
   }
 
   /* -- provenance ------------------------------------------- */
+  /* Where every number on the page came from: the source behind each 2p curve,
+   * the emission spectra, the filters, the lasers, and the one assumption the
+   * tool makes that is not data at all - the power model. Anything modelled
+   * rather than measured is tagged as such. */
   function renderProvenance() {
     var sel = buildSelection();
     var fl = allFilters();
@@ -1322,6 +1420,9 @@
 
   /* ---------------------------------------------------------- filter UI */
 
+  /* Open the filter library dialog. `cb(record, curve)` is called with the
+   * chosen filter once its curve has been fetched, so callers never deal with
+   * the loading themselves. */
   var pickerCb = null;
   function openPicker(title, cb) {
     pickerCb = cb;
@@ -1332,6 +1433,8 @@
     $('picker-search').focus();
   }
 
+  /* The dialog's results, from the index rather than the curves - thousands of
+   * filters, so it searches names only and shows the first 120 matches. */
   function renderPickerList() {
     var q = $('picker-search').value.trim().toLowerCase();
     var type = $('picker-type').value;
@@ -1361,6 +1464,10 @@
       : items.length + ' match' + (items.length === 1 ? '' : 'es') + ' of ' + INDEX.filters.length + ' filters.';
   }
 
+  /* Fetch the chosen filter's curve, then hand it to whoever opened the dialog.
+   * The library is loaded on demand, so this is the one action on the page that
+   * needs the files to be served over http rather than opened from disk - which
+   * is what the failure message says. */
   function choosePickerItem(rec) {
     loadShard(rec.s).then(function (shard) {
       var packed = shard[rec.id];
@@ -1388,6 +1495,8 @@
 
   /* --------------------------------------------------------------- misc */
 
+  /* A brief message in the corner. For things that happened, never for things
+   * the user has to answer. */
   var toastTimer = null;
   function toast(msg) {
     var t = $('toast');
@@ -1403,6 +1512,9 @@
    * reference you look things up in while working on the page behind it, and it
    * is longer than the page is tall.
    */
+  /* Rows for the summary plot, in three blocks - proteins, Alexa dyes, tracers.
+   * Everything with a 2p curve from its preferred source, not just what is
+   * selected: the point of the plot is to look things up. */
   function summaryGroups(commonOnly) {
     var groups = [{ rows: [] }, { rows: [] }, { rows: [] }];   // protein, Alexa, tracer
     CORE.fluorophores.forEach(function (f) {
@@ -1422,6 +1534,9 @@
     return groups.filter(function (g) { return g.rows.length; });
   }
 
+  /* Draw the summary plot and put it in a window of its own, as a PNG with a
+   * key and a save link. A self-contained document written in one go rather
+   * than a page to be navigated to, so it survives the tool being reloaded. */
   function openSummary(commonOnly) {
     var groups = summaryGroups(commonOnly);
     if (!groups.length) { toast('No two-photon data to plot'); return; }
@@ -1490,8 +1605,10 @@
     return rows.join('\n') + '\n';
   }
 
+  /* Four decimal places: more than the data justifies, few enough to read. */
   function round4(v) { return Math.round(v * 1e4) / 1e4; }
 
+  /* The folder and zip name for a panel, and what the file is called on disk. */
   function panelName(key) {
     return key === 'exc' ? 'two-photon-excitation' : 'emission-and-filters';
   }
@@ -1525,6 +1642,8 @@
     return lines.join('\n') + '\n';
   }
 
+  /* Save a panel as <name>.zip holding the image, the numbers and a README.
+   * 'exc' or 'em'. */
   function downloadPanel(key) {
     var c = charts[key];
     if (!c) return;
@@ -1546,6 +1665,9 @@
 
   /* ------------------------------------------------------------ url state */
 
+  /* The whole page as a small object for the URL. Keys are one or two letters
+   * because this gets base64'd into a link someone will paste into an email;
+   * readHash() below is the other half and the two must be kept in step. */
   function compactState() {
     return {
       s: state.scopeId, sn: state.scopeName, bl: state.blockerNm,
@@ -1574,6 +1696,10 @@
     } catch (e) { return null; }
   }
 
+  /* Push the current state into the URL, and remember the rig for next time.
+   * replaceState rather than pushState: this happens on every render, and it is
+   * a bookmark, not a step in the user's history. `hashLock` keeps it quiet
+   * while a link is being read at boot. */
   var hashLock = false;
   function writeHash() {
     if (hashLock) return;
@@ -1585,6 +1711,9 @@
     } catch (e) { /* URL state is a convenience; never break the page over it */ }
   }
 
+  /* Restore from a #v1= link, returning whether there was one to restore. Every
+   * field is optional, so an older link still opens and simply keeps the
+   * defaults for anything it does not carry. */
   function readHash() {
     var m = /#v1=(.+)$/.exec(location.hash);
     if (!m) return false;
@@ -1654,6 +1783,9 @@
 
   /* --------------------------------------------------------------- theme */
 
+  /* Set the theme to 'dark', 'light' or 'auto' and remember the choice. Writes
+   * both the preference and what it resolved to, since 'auto' is the one the
+   * stylesheet can act on but the charts need the answer. */
   function applyTheme(pref) {
     document.documentElement.dataset.theme = pref;
     var dark = pref === 'dark' ||
@@ -1664,6 +1796,8 @@
 
   /* ------------------------------------------------- import / export UI */
 
+  /* Keep the microscope dropdown and its Forget button in step with state,
+   * rebuilding the options only when they no longer hold the current rig. */
   function renderScopeControls() {
     var ss = $('scope-select');
     if (ss.value !== state.scopeId ||
@@ -1673,6 +1807,9 @@
     $('btn-forget-scope').hidden = !isSaved(state.scopeId);
   }
 
+  /* Rebuild the dropdown: the built-in BrainSaws, anything saved on this
+   * machine, and - when the current rig is neither - an "Unsaved" entry, so a
+   * config arriving by link or handoff is visible instead of showing as blank. */
   function renderScopeOptions() {
     var ss = $('scope-select');
     ss.innerHTML = '';
@@ -1696,11 +1833,15 @@
     ss.value = state.scopeId;
   }
 
+  /* A name as a file name and an id: lower case, hyphens, nothing else. */
   function slug(name) {
     return (name || 'microscope').toLowerCase().replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '') || 'microscope';
   }
 
+  /* Name the current rig, download it as JSON, and add it to this machine's
+   * list. Both, deliberately: the file is what gets shared or committed to
+   * configs/, the local copy is what makes it there tomorrow morning. */
   function saveConfig() {
     var name = window.prompt('Name for this microscope', state.scopeName || 'My microscope');
     if (name == null) return;
@@ -1726,6 +1867,8 @@
     renderAll();
   }
 
+  /* Read a microscope config the user picked off disk. Validated only as far as
+   * "has channels", which is enough to tell a config from any other JSON. */
   function loadConfigFile(file) {
     var reader = new FileReader();
     reader.onload = function () {
@@ -1754,6 +1897,10 @@
 
   /* ---------------------------------------------------------------- init */
 
+  /* Attach every event listener on the page, once, and then push the restored
+   * state back out into the controls so they agree with it. Listeners are bound
+   * to elements that exist for the life of the page; anything rebuilt on a
+   * render binds its own handlers in the renderer that creates it. */
   function bindUI() {
     // scope + laser
     var ss = $('scope-select');
@@ -1965,6 +2112,10 @@
     });
   }
 
+  /* Boot: unpack the data, settle the theme, work out which rig to open, wire
+   * the UI, build the charts, and only render once any filters a shared link
+   * refers to have been fetched - so the first thing drawn is the right thing
+   * rather than a version that corrects itself a moment later. */
   function init() {
     if (!CORE) {
       document.body.innerHTML = '<p style="padding:40px;font:16px system-ui">' +

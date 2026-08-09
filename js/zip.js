@@ -21,12 +21,15 @@
     return t;
   }());
 
+  /* CRC-32 of a Uint8Array, which every zip entry carries twice - once in its
+   * local header and once in the central directory. */
   function crc32(bytes) {
     var c = 0xFFFFFFFF;
     for (var i = 0; i < bytes.length; i++) c = CRC[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
     return (c ^ 0xFFFFFFFF) >>> 0;
   }
 
+  /* Text to bytes, for the CSV and README entries. Exported as SV.zipText. */
   function utf8(str) { return new TextEncoder().encode(str); }
 
   /* Bytes out of a canvas's data: URL, without a round trip through fetch(). */
@@ -45,7 +48,9 @@
     };
   }
 
-  /* files: [{ name, data: Uint8Array }] -> Blob */
+  /* files: [{ name, data: Uint8Array }] -> Blob. `name` may contain slashes to
+   * put entries in a folder; `when` is the timestamp to stamp them all with,
+   * defaulting to now. */
   function zip(files, when) {
     var stamp = dosStamp(when || new Date());
     var parts = [], dir = [], offset = 0;

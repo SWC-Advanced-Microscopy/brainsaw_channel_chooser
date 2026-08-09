@@ -6,6 +6,7 @@
 (function (SV) {
   'use strict';
 
+  /* A 0..1 fraction as a whole-number percentage. */
   var pct = function (v) { return Math.round(v * 100) + '%'; };
 
   /* Wavelengths labs actually dial in, where that is well established and can
@@ -17,6 +18,16 @@
     tdtomato: { wl: 1040, note: 'the usual tdTomato wavelength where the laser reaches it' },
   };
 
+  /* The notes under the headline wavelength, as [{kind, text}] where kind is
+   * one of info / warn / danger / alt and decides only how the page styles the
+   * line. Order is the order they are pushed, which is roughly most to least
+   * urgent.
+   *
+   * ctx: rec the recommender's result, focus the row for the wavelength the
+   * user is actually looking at (the marker may have been dragged off the
+   * suggestion), selection the chosen fluorophores, laser the one under the
+   * marker, rig every laser fitted, plan the output of the page's laserPlan,
+   * laserMode 'simultaneous' or 'sequential', channels the current channels. */
   function explain(ctx) {
     var rec = ctx.rec, laser = ctx.laser;
     var items = [];
@@ -421,7 +432,9 @@
   }
 
   /* Everything about where emission lands belongs with the channels, not with
-   * the wavelength advice at the top of the page. */
+   * the wavelength advice at the top of the page. Same [{kind, text}] shape as
+   * explain(). ctx: breakdown from channelBreakdown, channels, and overlaps
+   * from separability(). */
   function explainDetection(ctx) {
     var items = [];
 
@@ -458,7 +471,10 @@
    * would help, and none would. */
   var FAR_RED_NM = 650;
 
-  /* Per-channel reasoning for the acquisition plan. */
+  /* Per-channel reasoning for the acquisition plan: one sentence for the row,
+   * saying why this channel is signal, anatomy or skip. `entry` is one element
+   * of plan.plan, `plan` the whole thing, `wl` the excitation wavelength the
+   * background figure belongs to. */
   function channelReason(entry, plan, wl) {
     var bg = SV.optics.bgLabel(entry.bg);
     var farRed = entry.centre >= FAR_RED_NM;
@@ -492,7 +508,9 @@
     return 'Not needed — ' + bg + ' background at ' + wl + ' nm.';
   }
 
-  /* Headline sentence for the acquisition plan. */
+  /* Headline sentence for the acquisition plan - which channels to record and
+   * which one carries the anatomy - as {kind, text}, or null when nothing is
+   * selected yet. */
   function planSummary(plan, wl) {
     if (!plan.signals.length) return null;
     var sig = plan.signals.map(function (p) { return p.channel.name; });
@@ -511,6 +529,8 @@
     return { kind: 'good', text: msg + '.' };
   }
 
+  /* Who measured the first selected fluorophore's 2p curve ("Drobizhev",
+   * "Zipfel", …), for naming the data a claim rests on. */
   function sourceLabel(ctx) {
     var s = ctx.selection && ctx.selection[0];
     var src = s && s.source;
@@ -518,18 +538,23 @@
     return meta ? meta.label : 'measured';
   }
 
+  /* The display name of a selection entry, which is what every sentence here
+   * calls a fluorophore. */
   function name(s) { return s.fluor.name; }
 
   /* Percentages stop reading as percentages past about half as much again. */
   function ratio(r) { return r > 1.5 ? r.toFixed(1) + '\u00d7' : pct(r); }
 
-  /* "31% more" reads like a real number; "1× more" reads like a bug. */
+  /* How much more the better option gives, from the ratio worse/better - so
+   * pass base/best, not best/base. "31% more" reads like a real number;
+   * "1× more" reads like a bug, hence the two forms. */
   function more(r) {
     if (!(r > 0) || r >= 1) return 'more';
     var f = 1 / r;
     return f < 2 ? Math.round((f - 1) * 100) + '% more' : Math.round(f) + '× more';
   }
 
+  /* Names as English: "a", "a and b", "a, b and c". */
   function list(names) {
     if (!names.length) return 'nothing';
     if (names.length === 1) return names[0];

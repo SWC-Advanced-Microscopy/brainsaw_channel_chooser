@@ -8,12 +8,93 @@
  * Both charts use a SINGLE y axis. Series that would otherwise need a second
  * scale (laser tuning curve, filter transmission) are expressed in the same
  * relative/percentage units as everything else, or moved to their own panel.
+ *
+ * ---------------------------------------------------------------------------
+ * HOW IT IS PUT TOGETHER
+ *
+ * One canvas per chart, redrawn in full on every change. There is no scene
+ * graph, no dirty-region tracking and no animation: a redraw is a few thousand
+ * line segments and takes well under a frame, so the simplest thing that works
+ * is also fast enough. Everything you see is therefore a pure function of
+ * (series, zones, markers, hoverX, view) - if the picture is wrong, one of
+ * those five is wrong, and nothing is cached in between.
+ *
+ * The one piece of DOM besides the canvas is the tooltip, which is an absolutely
+ * positioned div rather than drawn text: it needs text selection, wrapping and
+ * the page's own fonts and colours.
+ *
+ * Everything a Curve must provide (see js/curves.js): at(x), peak(lo, hi),
+ * isEmpty(), x0, x1, and .pts for the sparse case. Any object with those works;
+ * the chart never looks inside.
+ *
+ * DRAW ORDER, back to front, because it is what makes the layering read:
+ *   zones -> grid -> [clip] band fills -> area fills -> lines [/clip] ->
+ *   markers -> axes -> spectral rail -> peak labels -> hover -> zoom selection
+ * Fills and lines are drawn inside a clip so a curve running off the top of a
+ * zoomed view is cut off cleanly rather than scribbling over the axis labels.
+ *
+ * COORDINATES. plotRect() is the drawing area inside the padding; sx()/sy() map
+ * data to pixels and ix() maps back. The x mapping uses `view`, which zooming
+ * changes, and the y mapping uses `opts`, which it does not - this chart zooms
+ * in x only, because a spectrum's y axis is already 0..1 or 0..peak.
+ *
+ * HIGH DPI. The canvas backing store is sized in device pixels and the context
+ * scaled once in resize(), so every coordinate in this file is CSS pixels.
+ *
+ * ---------------------------------------------------------------------------
+ * PUBLIC API
+ *
+ *   new SV.Chart(container, opts)   opts described on the constructor
+ *   setSeries / setZones / setMarkers   replace a whole layer and redraw
+ *   setYRange(min, max) / setXRange(min, max)
+ *   resetZoom() / isZoomed()
+ *   render()                        force a redraw (theme changes, say)
+ *   resize()                        called automatically by a ResizeObserver
+ *   toPNG(scale)                    data: URL, on an opaque background
+ *   destroy()                       drop the ResizeObserver
+ *
+ * A SERIES is a plain object. Only `curve` and `color` are required:
+ *   curve      an SV.Curve
+ *   color      any CSS colour string
+ *   label      shown in the tooltip and the page's legend
+ *   kind       'line' (default) | 'area' | 'band'. A band is a filter's
+ *              transmission: filled and outlined, drawn behind everything else.
+ *   width      line width in px, default 2
+ *   dash       setLineDash pattern, e.g. [5, 4]
+ *   fill       fill under a line as well as stroking it
+ *   fillAlpha  opacity of that fill
+ *   gradient   fill with the colours of the light itself (emission curves)
+ *   points     [[x, y], ...] to mark with dots, for sparse measured data
+ *   peakLabel  text to write at the curve's maximum
+ *   hidden     skip it entirely; dimmed: draw it at 28% and skip its label
+ *   noTip      leave it out of the hover readout
+ *   id         the page's handle for it, e.g. for legend toggling
+ * Anything else you hang on a series is passed back to tipFormat untouched.
+ *
+ * A ZONE is { x0, x1, color, label } - a background band naming a region of the
+ * x axis ("outside laser range"). A MARKER is a vertical line:
+ * { x, color, width, dash, label, labelColor, draggable, id }.
  */
 (function (SV) {
   'use strict';
 
+  /* Capped at 2: beyond that the extra pixels cost real time on a 3x phone and
+   * buy nothing on a chart made of thin lines. */
   var DPR = function () { return Math.min(window.devicePixelRatio || 1, 2); };
 
+  /* Build a chart inside `container`, which it fills and whose size it follows.
+   *
+   * opts, all optional:
+   *   xMin, xMax, yMin, yMax   data ranges; x also becomes the zoom-out extent
+   *   xLabel, yLabel           axis captions
+   *   padding                  {top, right, bottom, left} in px around the plot
+   *   spectralRail             draw a visible-spectrum strip under the x axis
+   *   yTickFormat(v)           -> string for a y tick
+   *   tipFormat(v, series)     -> string for one tooltip row
+   *   onMarkerDrag(marker, x)  a draggable marker was moved to x (already
+   *                            rounded to 1 nm and clamped to the view)
+   *   onZoom(chart)            the x view changed, by drag or double-click
+   */
   function Chart(container, opts) {
     this.opts = Object.assign({
       xMin: 400, xMax: 800, yMin: 0, yMax: 1,
@@ -51,6 +132,9 @@
     this.resize();
   }
 
+  /* The page's colours, read off the container's computed style so the chart
+   * follows the stylesheet and the light/dark toggle without being told. Read
+   * fresh on every render because a theme change is just new CSS variables. */
   Chart.prototype.theme = function () {
     var cs = getComputedStyle(this.container);
     var pick = function (name, fallback) {
@@ -68,6 +152,9 @@
     };
   };
 
+  /* Match the backing store to the container's size in device pixels, then set
+   * the transform so all drawing code can work in CSS pixels. Called by the
+   * ResizeObserver, so nothing else needs to know when the layout moves. */
   Chart.prototype.resize = function () {
     var r = this.container.getBoundingClientRect();
     if (!r.width || !r.height) return;
@@ -81,6 +168,9 @@
     this.render();
   };
 
+  /* The drawing area: {x, y, w, h} inside the padding, plus `rail`, the height
+   * reserved under it for the spectral strip (0 when there is none). Cheap
+   * enough to call per draw call rather than cache and have to invalidate. */
   Chart.prototype.plotRect = function () {
     var p = this.opts.padding;
     var rail = this.opts.spectralRail ? 12 : 0;
@@ -92,6 +182,8 @@
     };
   };
 
+  /* Data to pixels and back. sx uses the zoomable x view; sy uses the fixed y
+   * range; ix(px) is sx inverted, for turning a pointer position into nm. */
   Chart.prototype.sx = function (x) {
     var r = this.plotRect();
     return r.x + (x - this.view.xMin) / (this.view.xMax - this.view.xMin) * r.w;
@@ -106,12 +198,18 @@
     return this.view.xMin + (px - r.x) / r.w * (this.view.xMax - this.view.xMin);
   };
 
+  /* Each of the three layers is replaced wholesale rather than added to: the
+   * page rebuilds its list from state every time, so there is nothing to
+   * diff and no way for a stale series to survive a change. */
   Chart.prototype.setSeries = function (series) { this.series = series || []; this.render(); };
   Chart.prototype.setZones = function (zones) { this.zones = zones || []; this.render(); };
   Chart.prototype.setMarkers = function (markers) { this.markers = markers || []; this.render(); };
+  /* New y range, e.g. when the excitation panel switches from % to GM. */
   Chart.prototype.setYRange = function (min, max) {
     this.opts.yMin = min; this.opts.yMax = max; this.render();
   };
+  /* New x range. Also resets the zoom, since the extent it zooms out to is
+   * exactly this. */
   Chart.prototype.setXRange = function (min, max) {
     this.opts.xMin = min; this.opts.xMax = max;
     this.view = { xMin: min, xMax: max };
@@ -127,6 +225,10 @@
 
   /* ------------------------------------------------------------- ticks */
 
+  /* About `target` ticks between min and max, on a step from the 1/2/2.5/5/10
+   * series so the labels are numbers a person would have chosen. Returns the
+   * tick values; exported as SV.niceTicks because the summary plot wants the
+   * same ones. */
   function niceTicks(min, max, target) {
     var span = max - min;
     if (span <= 0) return [min];
@@ -143,6 +245,8 @@
 
   /* ------------------------------------------------------------ render */
 
+  /* Redraw everything, in the layer order set out at the top of the file. Safe
+   * to call as often as you like; it is what every setter does. */
   Chart.prototype.render = function () {
     if (!this.ctx || !this.w) return;
     var ctx = this.ctx, r = this.plotRect(), t = this.theme();
@@ -168,6 +272,9 @@
     this._drawSelection(ctx, r, t);
   };
 
+  /* Background bands naming a stretch of the x axis. First thing drawn, so
+   * everything else sits on top of them. The label is dropped when the band is
+   * too narrow to hold it rather than clipped or shrunk. */
   Chart.prototype._drawZones = function (ctx, r, t) {
     for (var i = 0; i < this.zones.length; i++) {
       var z = this.zones[i];
@@ -189,6 +296,10 @@
     }
   };
 
+  /* Grid lines, and the only place the tick positions are worked out: they are
+   * stashed on the instance for _drawAxes to label, so the two can never
+   * disagree. The half-pixel offsets keep 1 px lines from landing across two
+   * device pixels and going grey. x tick density follows the plot width. */
   Chart.prototype._drawGrid = function (ctx, r, t) {
     var xs = niceTicks(this.view.xMin, this.view.xMax, Math.max(3, Math.round(r.w / 90)));
     var ys = niceTicks(this.opts.yMin, this.opts.yMax, 5);
@@ -208,6 +319,14 @@
     this._xticks = xs; this._yticks = ys;
   };
 
+  /* Lay a curve into the current path, clipped to the visible x range and
+   * sampled at one point per horizontal pixel - so the cost of drawing depends
+   * on the width of the chart, not on how densely the curve was measured. A
+   * 1 nm FPbase spectrum and a five-point measurement cost the same.
+   *
+   * `clampBaseline` stops the path dipping below y=yMin, which matters when the
+   * same path is being closed into a fill. Returns false if the curve does not
+   * appear in the current view at all. */
   Chart.prototype._pathCurve = function (ctx, curve, r, clampBaseline) {
     var lo = Math.max(curve.x0, this.view.xMin - 2);
     var hi = Math.min(curve.x1, this.view.xMax + 2);
@@ -226,6 +345,15 @@
     return started;
   };
 
+  /* Draw the series belonging to one `phase`: 'band', then 'area', then 'line'.
+   *
+   * Three passes over the whole list rather than one pass drawing each series
+   * completely, because the layering has to be global - every filter band
+   * belongs behind every fluorophore fill, which belongs behind every line. One
+   * pass would put each series' own fill over its neighbour's line.
+   *
+   * Dimmed series are drawn at 28% here rather than by fading their colour, so
+   * the fill and the stroke fade together and by the same amount. */
   Chart.prototype._drawSeries = function (ctx, r, t, phase) {
     for (var i = 0; i < this.series.length; i++) {
       var s = this.series[i];
@@ -288,7 +416,10 @@
     }
   };
 
-  /* Fill under an emission curve with the colours of the light it emits. */
+  /* Fill under an emission curve with the colours of the light it emits: a
+   * horizontal gradient sampled at 12 stops across the curve's visible span,
+   * each stop the sRGB of that wavelength at `alpha`. Twelve is enough because
+   * the hue changes slowly and the browser interpolates between stops. */
   Chart.prototype._spectralGradient = function (ctx, r, curve, alpha) {
     var x0 = Math.max(curve.x0, this.view.xMin);
     var x1 = Math.min(curve.x1, this.view.xMax);
@@ -302,6 +433,10 @@
     return g;
   };
 
+  /* Vertical lines with a pill label above the plot, kept inside the plot's
+   * width so a marker near either edge does not hang off the canvas. A
+   * draggable one gets a grab handle on the baseline; that dot is also what the
+   * hit test in _bind() is aiming at. */
   Chart.prototype._drawMarkers = function (ctx, r, t) {
     for (var i = 0; i < this.markers.length; i++) {
       var m = this.markers[i];
@@ -338,6 +473,9 @@
     }
   };
 
+  /* The baseline, the tick labels at the positions _drawGrid worked out, and
+   * the two axis captions. There is no y axis line - the grid already carries
+   * the eye, and a spine as well is one mark too many. */
   Chart.prototype._drawAxes = function (ctx, r, t) {
     ctx.save();
     ctx.strokeStyle = t.axis;
@@ -381,6 +519,9 @@
     ctx.restore();
   };
 
+  /* The visible-spectrum strip under the emission chart's x axis, a column of
+   * 1 px fills so it follows any zoom for free. Slightly overdrawn (1.5 px
+   * wide) to avoid seams between columns on fractional device pixels. */
   Chart.prototype._drawRail = function (ctx, r) {
     var y = r.y + r.h + 4, h = r.rail - 2;
     for (var px = 0; px < r.w; px++) {
@@ -392,7 +533,12 @@
   };
 
   /* Direct labels at each curve's peak. Required relief for the low-contrast
-   * palette slots, and it means identity is never carried by colour alone. */
+   * palette slots, and it means identity is never carried by colour alone.
+   *
+   * Collisions are resolved by the crudest thing that works: place labels top
+   * down, and nudge each one 13 px lower until it clears everything already
+   * placed, giving up after 24 tries. With a handful of curves this is
+   * imperceptible, and it degrades into a neat column rather than a pile. */
   Chart.prototype._drawPeakLabels = function (ctx, r, t) {
     var boxes = [];
     for (var i = 0; i < this.series.length; i++) {
@@ -432,6 +578,12 @@
     ctx.restore();
   };
 
+  /* The crosshair, a dot on every curve it crosses, and the tooltip listing
+   * them biggest first (nine at most - past that it is a wall of text and the
+   * small values are not what anyone is reading). Curves are skipped where the
+   * hover sits outside their measured range, so "no row" means "not measured
+   * here" rather than "zero". The tooltip flips to the left of the cursor when
+   * it would otherwise run off the right edge. */
   Chart.prototype._drawHover = function (ctx, r, t) {
     if (this.hoverX == null || this.dragSel) { this.tip.classList.remove('on'); return; }
     var px = this.sx(this.hoverX);
@@ -490,6 +642,8 @@
     this.tip.style.top = Math.max(4, Math.min(this.h - th - 4, r.y + 4)) + 'px';
   };
 
+  /* The rubber band during a drag-to-zoom. In pixels, not data units, because
+   * it only exists between pointerdown and pointerup. */
   Chart.prototype._drawSelection = function (ctx, r, t) {
     if (!this.dragSel) return;
     var a = Math.min(this.dragSel.a, this.dragSel.b);
@@ -505,6 +659,17 @@
 
   /* ----------------------------------------------------------- pointer */
 
+  /* All the pointer handling, bound once in the constructor.
+   *
+   * A press within 9 px of a draggable marker grabs it; anything else starts a
+   * zoom selection, which is discarded if it ends up under 12 px wide so a
+   * stray click does not zoom to nothing. Pointer capture means a drag that
+   * leaves the canvas still tracks and still ends. Double-click zooms out.
+   *
+   * Dragging a marker rounds to whole nm and calls back on every change, which
+   * is what makes the page's numbers move with the marker rather than after it.
+   * Everything here works for touch and pen as well, because these are pointer
+   * events and not mouse events. */
   Chart.prototype._bind = function () {
     var self = this;
     var c = this.canvas;
@@ -584,6 +749,11 @@
     });
   };
 
+  /* The chart as a PNG data: URL at `scale`x (default 2), drawn onto an opaque
+   * background first - the live canvas is transparent so the page shows
+   * through, and a transparent PNG dropped into a document or a talk is a
+   * chart nobody can read. Whatever is on screen is what you get, zoom and
+   * hidden series included. */
   Chart.prototype.toPNG = function (scale) {
     var out = document.createElement('canvas');
     var s = scale || 2;
@@ -595,10 +765,14 @@
     return out.toDataURL('image/png');
   };
 
+  /* Stop following the container. The listeners go with the canvas when the
+   * container is emptied; the observer would not. */
   Chart.prototype.destroy = function () { this._ro.disconnect(); };
 
   /* ------------------------------------------------------------ helpers */
 
+  /* Rounded rectangle path, using the native roundRect where it exists and
+   * four arcs where it does not. Leaves the path for the caller to fill. */
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
     if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
@@ -612,6 +786,9 @@
 
   function clamp(v, a, b) { return Math.min(Math.max(v, a), b); }
 
+  /* The tooltip is built as HTML, so anything from the data - a fluorophore or
+   * filter name - goes through here first. Exported, because the rest of the
+   * page writes innerHTML for the same reasons and needs the same guard. */
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];

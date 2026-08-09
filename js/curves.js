@@ -9,6 +9,8 @@
 (function (SV) {
   'use strict';
 
+  /* Wrap one packed curve. `packed` is either {x0, dx, y:[…]} or {xy:[[x,y],…]};
+   * x0 and x1 are the ends of the measured range either way. */
   function Curve(packed) {
     this.uniform = !!(packed && packed.y);
     if (this.uniform) {
@@ -56,6 +58,9 @@
     return { y: best === -Infinity ? 0 : best, x: bestX };
   };
 
+  /* Call fn(x, y) for every stored sample, in order - the measured points, not
+   * an interpolated grid. Both packed forms iterate the same way here, which is
+   * what lets peak() and points() ignore the difference. */
   Curve.prototype.forEach = function (fn) {
     if (this.uniform) {
       for (var i = 0; i < this.ys.length; i++) fn(this.x0 + i * this.dx, this.ys[i]);
@@ -71,6 +76,7 @@
     return out;
   };
 
+  /* No samples at all, which the chart treats as "nothing to draw". */
   Curve.prototype.isEmpty = function () {
     return this.uniform ? !this.ys || !this.ys.length : !this.pts.length;
   };
@@ -144,6 +150,7 @@
     return hslToCss(hsl[0], sat, light);
   }
 
+  /* 0-255 sRGB to [hue, saturation, lightness], each 0..1. */
   function rgbToHsl(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     var max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -159,11 +166,15 @@
     return [h, s, l];
   }
 
+  /* The same three 0..1 numbers back out as a CSS hsl() string. */
   function hslToCss(h, s, l) {
     return 'hsl(' + Math.round(h * 360) + ' ' + Math.round(s * 100) + '% ' +
       Math.round(l * 100) + '%)';
   }
 
+  /* A CSS colour at a given opacity. Handles the two forms this page produces -
+   * hsl() from wavelengthLine and #rrggbb from the stylesheet - and returns
+   * anything else untouched rather than guessing. */
   function withAlpha(css, alpha) {
     if (css.indexOf('hsl(') === 0) return css.replace('hsl(', 'hsla(').replace(')', ' / ' + alpha + ')');
     if (css[0] === '#') {
