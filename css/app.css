@@ -228,7 +228,14 @@ select { cursor: pointer; }
   background: var(--accent-soft); color: var(--accent-ink);
   border-radius: 99px; padding: 1px 7px; font-size: 11px; letter-spacing: 0;
 }
-.panels { padding: 18px 20px 60px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* A container, so .chart-pair can ask how wide the column it sits in actually
+   is. The window width is the wrong question: the rail is 328 px on a desktop
+   and nothing at all on a phone, so the same viewport gives quite different
+   room for a chart. */
+.panels {
+  padding: 18px 20px 60px; display: flex; flex-direction: column; gap: 16px;
+  min-width: 0; container-type: inline-size;
+}
 
 /* --------------------------------------------------- fluorophore picker */
 .search-wrap { margin-bottom: 9px; }
@@ -439,6 +446,24 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .chart-host { position: relative; height: 320px; max-height: 70dvh; padding: 0 8px; }
 #chart-exc { height: 296px; }
 .sv-chart { position: relative; width: 100%; }
+
+/* Stacked, a chart is as wide as the column. On an ultrawide that column can be
+   3000 px, and a 296 px chart drawn across it is a 10:1 letterbox: the spectra
+   flatten out and the wavelength axis is mostly empty. Past 5:1 the pair go side
+   by side instead, which halves the width and puts both plots on screen at once
+   - a better use of the room than one very long chart.
+
+   The threshold is read off the panel column rather than the window, and 1500 px
+   of column is where the shorter of the two charts first passes 5:1. Side by
+   side they are given the same height so the two plot areas line up, and the
+   cards stretch to match, so their heads and feet do too. */
+.chart-pair { display: grid; gap: 16px; min-width: 0; }
+.chart-pair > .card { min-width: 0; }
+
+@container (min-width: 1500px) {
+  .chart-pair { grid-template-columns: 1fr 1fr; align-items: stretch; }
+  .chart-pair .chart-host, .chart-pair #chart-exc { height: 340px; }
+}
 .sv-canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; }
 .sv-tip {
   position: absolute; pointer-events: none; opacity: 0; transform: translateY(-2px);

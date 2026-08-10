@@ -540,6 +540,27 @@ Three things, the last of them the substantial one.
    Neither rule can bite on a single laser, and every case in "Feedback on
    choices" above still gives the wavelength recorded there.
 
+## Charts side by side on a wide screen
+
+As asked: on a wide monitor the two key plots can reach about 10:1 — really
+stretched. Once the ratio exceeds 5:1 the two should go side by side instead.
+
+### What that became
+
+Both panels now sit in a `.chart-pair` wrapper that is one column normally and
+two past the threshold. The question is asked of the **panel column**, with a
+container query, rather than of the window: the rail is 328 px on a desktop and
+nothing at all on a phone, so the same viewport leaves quite different room for a
+chart. 1500 px of column is where the shorter of the two first passes 5:1.
+
+Side by side they are given the same height, 340 px rather than the 320/296 they
+have stacked. The 24 px difference exists to level the two *cards* when one sits
+above the other; side by side it only misaligns the plot areas, and there is
+vertical room going spare once each chart is half as wide.
+
+Measured: a 3440 px ultrawide goes from about 9.6:1 to 4.5:1 with both plots on
+screen at once, and nothing below 1500 px of column moves at all.
+
 ## References
 The page should close with a list of references, as some of these data came from people's papers. 
 Also, the reader needs to know where to go for further information. 
