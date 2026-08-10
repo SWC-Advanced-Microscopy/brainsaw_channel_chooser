@@ -540,26 +540,40 @@ Three things, the last of them the substantial one.
    Neither rule can bite on a single laser, and every case in "Feedback on
    choices" above still gives the wavelength recorded there.
 
-## Charts side by side on a wide screen
+## A 2x2 of panels on a wide screen
 
-As asked: on a wide monitor the two key plots can reach about 10:1 — really
-stretched. Once the ratio exceeds 5:1 the two should go side by side instead.
+As asked, in two goes:
+
+1. On a wide monitor the two key plots can reach about 10:1 — really stretched.
+   Once the ratio exceeds 5:1 the two should go side by side instead.
+2. Then the same for Channels to acquire and Channel assignment, which go
+   **below** the graphs, so on a wide monitor the user sees a 2x2 of panels.
 
 ### What that became
 
-Both panels now sit in a `.chart-pair` wrapper that is one column normally and
-two past the threshold. The question is asked of the **panel column**, with a
-container query, rather than of the window: the rail is 328 px on a desktop and
-nothing at all on a phone, so the same viewport leaves quite different room for a
-chart. 1500 px of column is where the shorter of the two first passes 5:1.
+Each pair sits in a `.panel-pair` wrapper that is one column normally and two
+past the threshold. Both rows use the same breakpoint: a row that paired up while
+the other did not would look like a mistake rather than a layout.
 
-Side by side they are given the same height, 340 px rather than the 320/296 they
-have stacked. The 24 px difference exists to level the two *cards* when one sits
+The question is asked of the **panel column**, with a container query, rather
+than of the window — the rail is 328 px on a desktop and nothing at all on a
+phone, so the same viewport leaves quite different room for a chart. 1500 px of
+column is where the shorter of the two charts first passes 5:1.
+
+Cards stretch to their row's height so the four card edges align, which is most
+of what makes it read as a grid. In the bottom row that usually means the
+assignment card gains whitespace under its table, since the acquire panel is the
+taller of the two. The table itself was already `overflow-x: auto`, so at half
+width it scrolls inside its own card rather than pushing the page sideways.
+
+Paired charts are also given the same height, 340 px rather than the 320/296 they
+have stacked. That 24 px difference exists to level the two *cards* when one sits
 above the other; side by side it only misaligns the plot areas, and there is
 vertical room going spare once each chart is half as wide.
 
-Measured: a 3440 px ultrawide goes from about 9.6:1 to 4.5:1 with both plots on
-screen at once, and nothing below 1500 px of column moves at all.
+Measured: a 3440 px ultrawide goes from about 9.6:1 to 4.5:1 with all four panels
+on screen, no horizontal overflow at any width tried, and nothing below 1500 px of
+column moves at all.
 
 ## References
 The page should close with a list of references, as some of these data came from people's papers. 

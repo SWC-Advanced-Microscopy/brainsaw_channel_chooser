@@ -449,20 +449,24 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
 /* Stacked, a chart is as wide as the column. On an ultrawide that column can be
    3000 px, and a 296 px chart drawn across it is a 10:1 letterbox: the spectra
-   flatten out and the wavelength axis is mostly empty. Past 5:1 the pair go side
-   by side instead, which halves the width and puts both plots on screen at once
-   - a better use of the room than one very long chart.
+   flatten out and the wavelength axis is mostly empty. Past 5:1 the panels pair
+   up side by side instead, which halves the width and puts both plots on screen
+   at once - a better use of the room than one very long chart.
+
+   Two rows do this: the charts, and then channels-to-acquire beside channel
+   assignment, so the four read as a 2x2. Both use the same breakpoint, since a
+   row that paired up while the other did not would look like a mistake.
 
    The threshold is read off the panel column rather than the window, and 1500 px
-   of column is where the shorter of the two charts first passes 5:1. Side by
-   side they are given the same height so the two plot areas line up, and the
-   cards stretch to match, so their heads and feet do too. */
-.chart-pair { display: grid; gap: 16px; min-width: 0; }
-.chart-pair > .card { min-width: 0; }
+   of column is where the shorter of the two charts first passes 5:1. Cards
+   stretch to the row height so their heads and feet line up, and the paired
+   charts are given the same height so their plot areas do too. */
+.panel-pair { display: grid; gap: 16px; min-width: 0; }
+.panel-pair > .card { min-width: 0; }
 
 @container (min-width: 1500px) {
-  .chart-pair { grid-template-columns: 1fr 1fr; align-items: stretch; }
-  .chart-pair .chart-host, .chart-pair #chart-exc { height: 340px; }
+  .panel-pair { grid-template-columns: 1fr 1fr; align-items: stretch; }
+  .panel-pair .chart-host, .panel-pair #chart-exc { height: 340px; }
 }
 .sv-canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; }
 .sv-tip {
