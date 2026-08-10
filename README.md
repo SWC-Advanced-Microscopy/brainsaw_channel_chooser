@@ -392,6 +392,34 @@ selectable because it is worth knowing what it would buy: a Mai Tai at 920 nm pl
 an Axon at 1064 nm gives eGFP and tdTomato each close to their own peak, which no
 single wavelength can.
 
+**Beams add, but only where they differ.** Two lines on the sample together do
+give a fluorophore more than one does — that is why tdTomato can read over 100% of
+its own peak on a Mai Tai plus an Axon. But laser power is judged by sufficiency
+and not by quantity: once a beam has enough output to image with, more buys nothing
+anywhere else in the model, so a second beam parked next to the first is not twice
+the signal, it is the same excitation with the power turned up. Counting it as
+signal let the search collapse both lasers onto one wavelength — eGFP + tdTomato on
+a Mai Tai and a Chameleon Discovery came out as **940 nm on both lines**, a doubled
+compromise outscoring 920 + 1050 nm where each label sits near its own peak. So the
+strongest beam counts in full and every other counts for how far it is from the
+beams already counted: nothing on top of a co-tuned beam, rising to everything at
+60 nm away, which is about the width of the features in a two-photon cross-section.
+A Mai Tai at 920 nm and an Axon at 1064 nm are far past that and add as they always
+did.
+
+**And a fluorophore's score stops at its own best.** Exceeding a label's
+single-beam peak is real, and the page reports it, but it is a fact about the
+answer rather than a reason to choose it: the question being asked is whether each
+label is excited as well as it can be, and once it is, more is surplus in exactly
+the way surplus laser power is. Without that ceiling the balanced objective keeps
+dragging the redder beam back towards the weaker label, because scored in GM the
+weaker one can never reach the brighter one's peak and so is always the limiting
+term. The same pair came out at 930 + 990 nm, spending the second line lifting eGFP
+from 55 to 77 GM — both comfortable numbers — and paying for it with tdTomato at
+106 GM instead of 170. With the ceiling each beam goes where it is uniquely useful:
+**920 and 1040 nm**. A lone beam cannot exceed its own peak, so none of this
+changes anything on a single-laser rig.
+
 **A lone beam is never sent past 940 nm.** One beam has to do both jobs — excite
 the label and leave the other channels enough autofluorescence to register sections
 against — and past ~940 nm the green channel's background is going. This is a

@@ -989,9 +989,12 @@
     }
     if (rec && rec.best && on.length > 1) {
       on.forEach(function (l, i) {
-        // what this beam gives each fluorophore, as a share of what it gets
+        // What this beam gives each fluorophore, as a share of what it gets.
+        // Against `full` rather than `raw`, because raw stops at the ceiling and
+        // the contributions do not: a beam is idle if it adds little of the
+        // light actually arriving, not little of the light that counted.
         var idle = rec.best.contrib.every(function (parts, fi) {
-          var tot = rec.best.raw[fi];
+          var tot = rec.best.full[fi];
           return !tot || parts[i] / tot < SPARE_FRACTION;
         });
         if (idle) plan.spare.push(l.id);

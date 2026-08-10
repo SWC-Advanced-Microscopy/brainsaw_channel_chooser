@@ -81,6 +81,12 @@
   var CAP_EVIDENCE = 20;   // nm of measured curve required beyond a claimed top
   var DEFAULT_MIN_WL = 760;
   var EM_LO = 380, EM_HI = 800;   // integration window for emission / detection
+  /* How far apart two beams have to be before the second one is worth having.
+   * See stack() - this is the whole of what stops both lasers being parked on
+   * the same wavelength. 60 nm is about the width of the features in a 2p
+   * cross-section, so beams closer than that are largely asking the same
+   * question; a Mai Tai at 920 and an Axon at 1064 are nowhere near it. */
+  var REDUNDANT_SPAN = 60;
 
   /* ------------------------------------------------------ optical path */
 
@@ -264,6 +270,41 @@
     return 1 - CTX_MAX * strength * t;
   }
 
+  /* What a fluorophore gets from several beams at once. `parts` is each beam's
+   * contribution and `wls` what each is tuned to, in the same order.
+   *
+   * Beams on the sample together do add - that is why tdTomato can read over
+   * 100% of its own peak on two lines - but only in so far as they are asking
+   * different questions of the fluorophore. powerWeight is a sufficiency test
+   * capped at 1: once a beam has enough power to image with, more power buys
+   * nothing anywhere else in this model. A second beam parked next to the first
+   * is therefore not twice the signal, it is the same excitation with the power
+   * turned up, and counting it as signal lets the search collapse both lasers
+   * onto one wavelength. eGFP + tdTomato on a Mai Tai and a Discovery came out
+   * as 940 + 940 nm, a doubled compromise scoring above 920 + 1050 nm where
+   * each fluorophore sits near its own peak.
+   *
+   * So the strongest beam counts in full and every other counts for how far it
+   * is from the beams already counted: nothing on top of a co-tuned beam,
+   * rising to everything at REDUNDANT_SPAN away. Strongest first so the result
+   * does not depend on which laser the rig happens to list first.
+   */
+  function stack(parts, wls) {
+    if (parts.length < 2) return parts.length ? parts[0] : 0;
+    var order = parts.map(function (_, i) { return i; })
+      .sort(function (a, b) { return parts[b] - parts[a]; });
+    var counted = [], v = 0;
+    order.forEach(function (i) {
+      var d = 1;
+      for (var k = 0; k < counted.length; k++) {
+        d = Math.min(d, Math.abs(wls[i] - wls[counted[k]]) / REDUNDANT_SPAN);
+      }
+      v += parts[i] * d;
+      counted.push(i);
+    });
+    return v;
+  }
+
   /* ------------------------------------------------------- recommender */
 
   /* Wavelengths people actually dial in. Not merely round: 900 nm is rounder
@@ -410,15 +451,43 @@
     };
     var allSaturating = usable.every(function (s) { return s.sat; });
 
+    /* The best a single beam can do for each fluorophore, in whatever units
+     * sigma is working in, and the point at which the objective stops caring.
+     *
+     * Two beams really can push a label past its own single-beam best, and the
+     * page says so - tdTomato reads over 100% on a Mai Tai plus an Axon. But
+     * that is a fact about the answer, not a reason to choose it. The question
+     * the objective asks is whether each label is being excited as well as it
+     * can be; once it is, more excitation on top is surplus, in exactly the way
+     * surplus laser power is surplus in powerWeight.
+     *
+     * Without this the balanced objective keeps dragging the redder beam back
+     * towards the weaker label, because in GM the weaker one can never reach the
+     * brighter one's peak and so is always the limiting term. eGFP + tdTomato on
+     * a Mai Tai and a Discovery came out at 930 + 990 nm, spending the second
+     * beam lifting eGFP from 55 to 77 GM - both comfortable numbers - and paying
+     * for it with tdTomato at 106 GM instead of 170. With a ceiling, each beam
+     * is free to go where it is uniquely useful: 920 and 1050 nm.
+     *
+     * A lone beam cannot exceed its own peak, so this never binds on a
+     * single-laser rig. Tracers are already ceilinged at their sufficiency
+     * level by sigma, which is the same idea arrived at from the other end. */
+    var ceiling = usable.map(function (s) {
+      if (s.sat || !absolute || !s.gmCurve) return 1;
+      return s.gmCurve.peak(700, 1320).y / gmScale;
+    });
+
     /* Score one wavelength per laser. `wls` is in the same order as `lasers`;
      * everything the page shows about a wavelength comes out of here, and it is
      * handed back on the result so a dragged marker is scored the same way.
      *
-     * Returns: obj the objective (balanced or averaged), tot their sum, per the
-     * per-fluorophore scores, raw the same before the anatomy penalty, contrib
-     * what each beam gave each fluorophore, from which pass each one uses in
-     * sequential mode, ctx the anatomy penalty applied, clears whether every
-     * tracer is over its sufficiency level, and beams the per-laser power. */
+     * Returns: obj the objective (balanced or averaged), tot the total signal
+     * used only as a tie-break, per the per-fluorophore scores, raw the same
+     * before the anatomy penalty, full the same again before the per-fluorophore
+     * ceiling - i.e. what the beams really deliver - contrib what each beam gave
+     * each fluorophore, from which pass each one uses in sequential mode, ctx the
+     * anatomy penalty applied, clears whether every tracer is over its
+     * sufficiency level, and beams the per-laser power. */
     function evalVec(wls) {
       var pw = [], ctxWl = Infinity;
       for (var i = 0; i < lasers.length; i++) {
@@ -432,17 +501,17 @@
       var clears = allSaturating;          // every dye already bright enough here
       var contrib = [];                    // what each beam gives each fluorophore
       var raw = [];                        // before the anatomy penalty
-      var per = usable.map(function (s) {
+      var full = [];                       // and before the per-fluorophore ceiling
+      var per = usable.map(function (s, idx) {
         var v = 0, pick = 0, parts = [];
         for (var i = 0; i < lasers.length; i++) {
           var term = sigma(s, wls[i]) * pw[i];
           parts.push(term);
-          if (combine === 'sequential') {
-            if (term > v) { v = term; pick = i; }
-          } else {
-            v += term;
-          }
+          if (combine === 'sequential' && term > v) { v = term; pick = i; }
         }
+        if (combine !== 'sequential') v = stack(parts, wls);
+        full.push(v);
+        v = Math.min(v, ceiling[idx]);
         from.push(pick);
         contrib.push(parts);
         if (v < 0.999) clears = false;
@@ -475,10 +544,18 @@
         });
         obj = (dead || !inv) ? 0 : iw / inv;
       }
-      var tot = per.reduce(function (a, b) { return a + b; }, 0);
+      /* Total signal, and deliberately the uncapped one: it is only ever a
+       * tie-break, and the ties that need breaking are exactly the ones the
+       * ceiling creates. Once every label is over its ceiling the objective is
+       * flat across a wide plateau, and without something underneath it the
+       * spare beam settles wherever roundness happens to land - eGFP on two
+       * tunable lasers came out as 760 + 880 nm, the 760 meaning nothing at all.
+       * Uncapped, the plateau is broken by which arrangement actually collects
+       * the most light, which puts both beams where the label is. */
+      var tot = full.reduce(function (a, b) { return a + b; }, 0) * cw;
       return {
         wls: wls, wl: wls[active], obj: obj, tot: tot, per: per, ctx: cw, from: from,
-        clears: clears, raw: raw, contrib: contrib,
+        clears: clears, raw: raw, full: full, contrib: contrib,
         power: aL._curve ? aL._curve.at(wls[active]) : 1,
         mw: sampleMw(aL, wls[active]),
         beams: lasers.map(function (l, i) {
