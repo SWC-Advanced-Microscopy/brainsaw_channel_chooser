@@ -420,8 +420,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .advice li.alt::before { background: var(--accent); }
 
 /* -------------------------------------------------------------- chart */
-.chart-host { position: relative; height: 340px; padding: 0 8px; }
-#chart-em { height: 320px; }
+/* The emission panel sets the height both charts are judged by - a little over
+   half the screen, so the card is taken in at a glance without scrolling. The
+   excitation chart is given rather less, not more: its card carries a second
+   row of controls (units, laser power, suitability) and a footnote underneath,
+   so an equal chart makes for a taller card. */
+.chart-host { position: relative; height: 320px; padding: 0 8px; }
+#chart-exc { height: 296px; }
 .sv-chart { position: relative; width: 100%; height: 100%; }
 .sv-canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; }
 .sv-tip {
@@ -624,7 +629,8 @@ td.dim { color: var(--text-muted); }
   .topbar-controls select { width: 100%; }
   .field > span { display: none; }
   .brand em { display: none; }
-  .chart-host { height: 300px; padding: 0 2px; }
+  .chart-host { height: 280px; padding: 0 2px; }
+  #chart-exc { height: 260px; }
   .card-head { padding: 12px 12px 10px; }
   .card-tools { width: 100%; margin-left: 0; }
   .hero-body { padding: 14px 14px 4px; gap: 18px; }
