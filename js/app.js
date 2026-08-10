@@ -1062,8 +1062,20 @@
 
     var wl = chosenWavelength(rec);
     var focus = wl != null ? evaluateAt(sel, wl, rec) : null;
+    var focusBeams = focus && focus.beams ? focus.beams : (rec && rec.best ? rec.best.beams : null);
+    var multi = !!(focusBeams && focusBeams.length > 1);
 
-    $('hero-wl').textContent = wl != null ? wl : '—';
+    /* With more than one beam on the sample the answer is a wavelength each, so
+     * the headline has to be all of them - "920 nm & 1064 nm". A single number
+     * up here with the rest in smaller type underneath left it unclear what was
+     * being shown, and which of the two it was. The unit rides inside the
+     * string in that case, and the number set drops in size to fit. */
+    $('hero-kicker').textContent = 'Suggested excitation wavelength' + (multi ? 's' : '');
+    $('hero-number').classList.toggle('is-multi', multi);
+    $('hero-unit').hidden = multi;
+    $('hero-wl').textContent = multi
+      ? focusBeams.map(function (b) { return b.wl + ' nm'; }).join(' & ')
+      : (wl != null ? wl : '—');
 
     var subParts = [];
     if (rec && rec.best && wl !== rec.best.wl) {
@@ -1090,12 +1102,12 @@
           (state.objective === 'balanced' ? '' : ', averaged') + basis + '.');
       }
     }
-    // with more than one laser on the rig, the answer is a wavelength each -
-    // the hero number is the one you are tuning, the rest are listed beneath
+    // The headline already carries every wavelength; these cards say which
+    // laser each one belongs to, mark the one the marker is dragging, and in
+    // one-pass-per-laser mode name the fluorophores each beam is there for.
     var beams = $('hero-beams');
     beams.innerHTML = '';
-    var focusBeams = focus && focus.beams ? focus.beams : (rec && rec.best ? rec.best.beams : null);
-    if (focusBeams && focusBeams.length > 1) {
+    if (multi) {
       subParts.push(state.laserMode === 'sequential'
         ? 'One pass per laser.'
         : 'Both beams on together.');

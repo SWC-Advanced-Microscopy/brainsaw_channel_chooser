@@ -350,6 +350,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   font-variant-numeric: tabular-nums; margin-top: 2px;
 }
 .hero-number .unit { font-size: 20px; font-weight: 500; color: var(--text-muted); margin-left: 6px; letter-spacing: 0; }
+/* Two beams means two numbers and their units - "920 nm & 1064 nm" - which
+   needs the room a single number does not. */
+.hero-number.is-multi { font-size: 32px; letter-spacing: -0.02em; }
 .hero-sub { color: var(--text-secondary); font-size: 12.5px; margin-top: 4px; }
 .hero-alts-row {
   display: flex; align-items: center; gap: 10px;
