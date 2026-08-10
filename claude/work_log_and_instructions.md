@@ -1,10 +1,14 @@
-# The brief
+# Work log and instructions
 
 This tool was written by Claude (Anthropic) working from a spoken-style brief
-given interactively by Rob Campbell. This document synthesises that brief into
-one place: what was asked for, what was decided along the way, and why the
-opinionated parts are the way they are. It is the reference for anyone picking
-the project up — including a future model.
+given interactively by Rob Campbell. The file is a mix of the two things that
+conversation produced: the **instructions** as they were given, round by round,
+and a **log** of what each round became once it met the data. It is the
+reference for anyone picking the project up — including a future model — so read
+it before changing the model or the presentation rules.
+
+Roughly chronological. Sections 1–9 are the original build; everything after
+"Next phase" is a later round of instructions with a note of what came of it.
 
 ---
 
@@ -477,6 +481,51 @@ a heatmap the user can look at and close.
   tracers. No titles needed — the row labels say what each one is.
 
 
+
+## Two tunable lasers
+
+As asked:
+
+1. When two lasers are selected the text up at the top should say, for example,
+   "920 nm & 1064 nm", because otherwise it is unclear what is being shown.
+2. The excitation graph is too high. The emission graph looks like it is set to
+   occupy about 60% of the screen height, which is good; do the same for the
+   excitation.
+3. Add a second tunable laser — a Discovery, which has a lot of power at all
+   wavelengths. With GFP plus tdTomato the algorithm does not suggest tuning it
+   to the 1050 nm range. Instead it suggests parking both lasers at around
+   950 nm, which makes no sense.
+
+### What that became
+
+Three things, the last of them the substantial one.
+
+1. With two lines on, the headline said one number. It now reads
+   "920 nm & 1064 nm", pluralises its label, and drops in size to fit; the cards
+   underneath keep saying which laser each wavelength belongs to.
+2. The excitation chart was taller than the emission one. It is now slightly
+   shorter, because its card carries a second row of controls and a footnote, so
+   the two panels come out level on the page.
+3. **A Mai Tai plus a Chameleon Discovery, eGFP + tdTomato, parked both lines at
+   ~940 nm** instead of putting the Discovery out at 1050 nm where tdTomato
+   peaks. Two faults, both in how several beams combine:
+
+   - Contributions were summed outright, so stacking both beams on one
+     wavelength doubled every fluorophore's score. But powerWeight is a
+     sufficiency test capped at 1 — surplus power buys nothing anywhere else in
+     the model — so a co-tuned second beam is not twice the signal, it is the
+     same excitation with the power turned up. Beams now add only in so far as
+     they differ, over 60 nm.
+   - That alone gave 930 + 990 nm. Scored in GM the dimmer label can never reach
+     the brighter one's peak, so it is always the limiting term of the harmonic
+     mean, and the second beam kept being dragged back to prop it up — lifting
+     eGFP from 55 to 77 GM, neither of them a number anyone worries about, at
+     the cost of tdTomato dropping 170 → 106. Each fluorophore's score now stops
+     at its own single-beam best, on the same "enough is enough" argument as the
+     power weight. Answer: 920 & 1040 nm.
+
+   Neither rule can bite on a single laser, and every case in "Feedback on
+   choices" above still gives the wavelength recorded there.
 
 ## References
 The page should close with a list of references, as some of these data came from people's papers. 
