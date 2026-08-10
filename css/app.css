@@ -420,9 +420,25 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .advice li.alt::before { background: var(--accent); }
 
 /* -------------------------------------------------------------- chart */
-.chart-host { position: relative; height: 340px; padding: 0 8px; }
-#chart-em { height: 320px; }
-.sv-chart { position: relative; width: 100%; height: 100%; }
+/* The chart host owns the height and nothing else may argue with it, which is
+   worth stating because for a long time something did: Chart puts `sv-chart` on
+   the same element, and `.sv-chart { height: 100% }` used to sit below this with
+   equal specificity and so win. The percentage then resolved against a card of
+   auto height, i.e. against the canvas the chart had just sized from the host -
+   a loop that settled wherever it settled, around 520 px. Only whichever host
+   also had an id rule was ever really pinned, which made the two panels look
+   arbitrarily different and moved the problem from one to the other when the id
+   rule moved. The host is a plain block with a height; the chart inside it does
+   not need one.
+
+   Emission sets the height both are judged by: a little over half the screen, so
+   the card is taken in at a glance. Excitation gets rather less, not more, since
+   its card carries a second row of controls (units, laser power, suitability)
+   and a footnote underneath, so an equal chart makes for a taller card. Neither
+   may pass 70% of the viewport however short the window gets. */
+.chart-host { position: relative; height: 320px; max-height: 70dvh; padding: 0 8px; }
+#chart-exc { height: 296px; }
+.sv-chart { position: relative; width: 100%; }
 .sv-canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; }
 .sv-tip {
   position: absolute; pointer-events: none; opacity: 0; transform: translateY(-2px);
@@ -624,7 +640,8 @@ td.dim { color: var(--text-muted); }
   .topbar-controls select { width: 100%; }
   .field > span { display: none; }
   .brand em { display: none; }
-  .chart-host { height: 300px; padding: 0 2px; }
+  .chart-host { height: 280px; padding: 0 2px; }
+  #chart-exc { height: 260px; }
   .card-head { padding: 12px 12px 10px; }
   .card-tools { width: 100%; margin-left: 0; }
   .hero-body { padding: 14px 14px 4px; gap: 18px; }
