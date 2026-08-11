@@ -18,3 +18,9 @@ They are to be incorporated into the web app or even just read be users.
 
 ## 3 Colour Combinations
 * A commonly used combination for three colours is eGFP, eBFP2, and mCherry excited at around 780 nm.
+
+
+
+# Qualitative notes
+* tdTomato is well known for being very bright
+* mScarlet is very bright. 

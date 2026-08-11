@@ -241,14 +241,15 @@
    * emission filter like ET570lp, whose upper edge is set by the blocker and
    * not by the filter at all. */
   var effCache = {};
-  function channelCurve(ch) {
-    var f = allFilters()[ch.spectrum];
+  function effectiveCurve(fid) {
+    var f = allFilters()[fid];
     if (!f || !f._curve) return null;
     var blocker = state.blockerNm || 700;
-    var key = ch.spectrum + '@' + blocker;
+    var key = fid + '@' + blocker;
     if (!effCache[key]) effCache[key] = SV.clipCurve(f._curve, blocker);
     return effCache[key];
   }
+  function channelCurve(ch) { return effectiveCurve(ch.spectrum); }
 
   /* Make `sc` the current rig: its channels, its blocking filter and its
    * lasers, with everything switched on and the marker back on the suggestion.
@@ -295,21 +296,30 @@
     var k = Object.keys(f.twop)[0];
     return k ? f.twop[k].peakWl : null;
   }
-  /* Centre of a filter's passband, from its half-maximum points. */
+  /* Centre of a filter's passband, from its half-maximum points.
+   *
+   * Of the blocker-clipped curve, not the filter's own: the centre is what
+   * decides whether a channel counts as blue, green, red or far red, and a
+   * long-pass like ET570lp runs to the end of the integration window on paper
+   * while the detector only ever sees it out to 700 nm. Judged raw it centres
+   * near 685 and reads as a far-red channel with no autofluorescence in it -
+   * which is how the 3-channel rig ended up sending anatomy to blue. Clipped it
+   * centres near 635, which is the red channel the light actually arrives in. */
   var centreCache = {};
   function filterCentre(fid) {
-    if (centreCache[fid] != null) return centreCache[fid];
-    var fl = allFilters()[fid];
-    if (!fl || !fl._curve) return null;
-    var pk = fl._curve.peak(EM_LO, EM_HI);
+    var key = fid + '@' + (state.blockerNm || 700);
+    if (centreCache[key] != null) return centreCache[key];
+    var curve = effectiveCurve(fid);
+    if (!curve) return null;
+    var pk = curve.peak(EM_LO, EM_HI);
     var half = pk.y / 2;
     var lo = null, hi = null;
-    fl._curve.forEach(function (x, y) {
+    curve.forEach(function (x, y) {
       if (x < EM_LO || x > EM_HI) return;
       if (y >= half) { if (lo === null) lo = x; hi = x; }
     });
-    centreCache[fid] = lo != null ? (lo + hi) / 2 : pk.x;
-    return centreCache[fid];
+    centreCache[key] = lo != null ? (lo + hi) / 2 : pk.x;
+    return centreCache[key];
   }
 
   /* A channel's swatch: the hue of the light its filter passes. */

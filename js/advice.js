@@ -486,19 +486,19 @@
       if (plan.plan.length && plan.signals.length === 0) {
         return 'Nothing to image yet — this is where the anatomy would go.';
       }
-      var best = plan.plan.reduce(function (a, b) { return b.bg > a.bg ? b : a; });
       var forced = plan.plan.filter(function (p) { return p.role !== 'signal'; }).length === 1;
       if (farRed) {
         return 'The only channel left, so it falls to this by default — but there is ' +
           'almost no autofluorescence in the far red at any excitation wavelength, ' +
           'so expect very little anatomical context from it.';
       }
+      /* No note about which channel would have collected more. The comparison
+       * rests on the background heuristic being accurate enough to rank two
+       * bands against each other, which it is not, and it is detail the reader
+       * cannot act on: the channel is carrying signal either way. That this one
+       * has background in it is the whole answer. */
       var txt = 'Anatomical reference — ' + bg + ' background at ' + wl + ' nm';
-      if (forced) {
-        txt += ', and the only channel left, so there is no choice here';
-      } else if (best !== entry && best.role === 'signal') {
-        txt += '. ' + best.channel.name + ' would collect more but it is carrying signal';
-      }
+      if (forced) txt += ', and the only channel left, so there is no choice here';
       return txt + '.';
     }
     if (farRed) {

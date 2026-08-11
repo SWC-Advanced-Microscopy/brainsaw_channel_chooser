@@ -575,6 +575,53 @@ Measured: a 3440 px ultrawide goes from about 9.6:1 to 4.5:1 with all four panel
 on screen, no horizontal overflow at any width tried, and nothing below 1500 px of
 column moves at all.
 
+## The 3-channel rig sent anatomy to blue
+
+> With YFP only and a three-channel rig it suggests 960 nm (which is right) but
+> it goes on to suggest blue as the background channel. There is very little, no
+> signal in blue. Under the red channel it states "very little autofluorescence
+> in the far red at any excitation wavelength..." But on this rig the red channel
+> is red AND far red. So it should be treated as red. The red channel will have
+> enough signal. The right combination is green and red. Not blue and red. On a
+> 4 channel rig it doesn't make this mistake.
+>
+> However, it does state on a 4 channel rig under the red channel "...Green would
+> carry more but is carrying signal". A) I don't know that green would carry more
+> background fluoro. B) This is too much detail. Strike that last sentence. It is
+> enough to state that red is the correct channel and will have signal, which is
+> what the first sentence says.
+
+### What that became
+
+The channel-role logic buckets a channel as blue, green, red or far red by the
+centre of its passband, and `filterCentre()` was taking that centre from the
+filter's own curve. That is right for a bandpass and wrong for a long-pass. The
+3-channel rig's red channel is a Chroma ET570lp whose upper edge is not the
+filter at all but the 700 nm laser blocking filter in front of the detectors —
+which the app already knew, and already applied when integrating emission, just
+not when locating the centre. Measured raw, ET570lp runs to the end of the 380–800
+nm window and centres near 685 nm: a far-red channel, background 0.10 at any
+wavelength, which at 960 nm loses to blue's 0.15. Measured through the blocker it
+centres near 635 nm and scores 0.56, which is the answer.
+
+So `filterCentre()` now measures the blocker-clipped curve. The clipping already
+existed as `channelCurve()`; it was refactored to `effectiveCurve(fid)` so the
+centre can ask for it by filter id, and the centre cache is keyed by blocker as
+the effective-curve cache already was. The 4-channel rig never had the bug
+because all four of its filters are bandpasses, and its far-red channel — 676/29,
+centre 676 either way — is still correctly called far red.
+
+The comparison sentence is gone. It rested on the background heuristic being
+accurate enough to rank two emission bands against each other, which it is not:
+green and red sit at 0.90 and 0.85 of a made-up scale, a gap well inside the
+error of a shape set by what the microscope looks like rather than by any
+measurement. It was also unactionable — the other channel is carrying signal
+either way.
+
+Checked on both rigs: eYFP now gives green + red on the 3-channel rig as on the
+4-channel one, and tdTomato (940, red + green), mCherry (760, red + blue) and
+eGFP (920, green + red) are unchanged and agree across the two rigs.
+
 ## References
 The page should close with a list of references, as some of these data came from people's papers. 
 Also, the reader needs to know where to go for further information. 
