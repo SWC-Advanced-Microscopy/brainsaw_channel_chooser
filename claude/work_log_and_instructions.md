@@ -557,8 +557,13 @@ the other did not would look like a mistake rather than a layout.
 
 The question is asked of the **panel column**, with a container query, rather
 than of the window — the rail is 328 px on a desktop and nothing at all on a
-phone, so the same viewport leaves quite different room for a chart. 1500 px of
-column is where the shorter of the two charts first passes 5:1.
+phone, so the same viewport leaves quite different room for a chart. 1350 px of
+column is where the shorter of the two charts first passes 4.5:1.
+
+The threshold started at 5:1 and was pulled back to 4.5:1 on a later look — the
+charts were still noticeably stretched in the last stretch before they paired up.
+In column terms that is 1350 px rather than 1500, which on a desktop is a 1740 px
+window rather than 1900.
 
 Cards stretch to their row's height so the four card edges align, which is most
 of what makes it read as a grid. In the bottom row that usually means the
@@ -571,9 +576,10 @@ have stacked. That 24 px difference exists to level the two *cards* when one sit
 above the other; side by side it only misaligns the plot areas, and there is
 vertical room going spare once each chart is half as wide.
 
-Measured: a 3440 px ultrawide goes from about 9.6:1 to 4.5:1 with all four panels
-on screen, no horizontal overflow at any width tried, and nothing below 1500 px of
-column moves at all.
+Measured: the excitation chart reaches 4.49:1 in the last pixel before the switch
+and drops to 2.0:1 just after; a 3440 px ultrawide goes from about 9.6:1 to 4.5:1
+with all four panels on screen; no horizontal overflow at any width tried, and
+nothing below 1350 px of column moves at all.
 
 ## The 3-channel rig sent anatomy to blue
 
