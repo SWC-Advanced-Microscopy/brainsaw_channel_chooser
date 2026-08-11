@@ -628,6 +628,62 @@ Checked on both rigs: eYFP now gives green + red on the 3-channel rig as on the
 4-channel one, and tdTomato (940, red + green), mCherry (760, red + blue) and
 eGFP (920, green + red) are unchanged and agree across the two rigs.
 
+## Where the background actually runs out
+
+> I'm sitting in front of a rig right now and I see nice background signal in
+> red and green at 960 nm. So we can shift that warning. Move that threshold to,
+> say, 990 nm, and in the text when referencing it you can say "about 1,000 nm"
+> as being the point at which we get little autofluorescence. So for tdTom at
+> 950 nm or so and eYFP at 960 nm, we don't need a warning in the top laser bar
+> saying "Above ~950 nm there is little background...". We retain that for when
+> the laser is tuned to >990 nm.
+
+### What that became
+
+The warning is now `NO_BACKGROUND_NM = 990` in `advice.js`, and reads "Above
+about 1,000 nm" — the rounder number being honest about how soft the edge is.
+The companion note offering the best option below the threshold moved with it.
+Checked by dragging the marker: silent at 950, 960, 980 and 990, fires at 1000
+and above.
+
+**The recommender's own penalty stayed at 950**, which is a different number
+doing a different job. `CTX_FULL` in `optics.js` is where the search starts
+*preferring* shorter wavelengths, and it is tuned against the background yields
+in the same file, where green is already fading by 940 nm. Moving it to 990 was
+tried and pushed the tunable line out to 980 nm in three cases on a **Mai Tai
+plus Axon 1064** rig — eYFP + mCherry, eYFP + tdTomato, and tdTomato alone —
+including giving up the green background that is the whole reason tdTomato sits
+at 940. (On the default single-Mai Tai rig none of those move: eYFP + mCherry is
+760 for mCherry's sake and eYFP + tdTomato is 960 for eYFP's peak, both
+unchanged.) So the note about where you have ended up moved; the thumb on the
+scale for getting there did not.
+
+## An alternative at the far end of the lone-beam cap
+
+> The different one is tdTomato alone with a tunable laser. We were cautiously
+> saying 940 nm. Background signal *does* vary from brain to brain. So I would
+> say for now, keep the recommendation at 940 nm but give an alternative of
+> 980 nm (that's new) and say in the text that if there is adequate background
+> there will be a roughly 33% signal boost in the red tdTomato signal by going
+> to that wavelength.
+
+### What that became
+
+33% is right: tdTomato reads 45.0 GM at 940 nm and 59.9 GM at 980, a factor of
+1.332. The number in the text is computed, not typed.
+
+When the lone-beam cap bites and the note about it is shown, the advice now also
+names the far end of the trade as a clickable alternative. The wavelength is
+found by walking 10 nm steps from the cap up to — but not including —
+`NO_BACKGROUND_NM`, keeping the best-scoring step that costs no selected
+fluorophore more than 5%, and offering it only if something gains more than 15%.
+Stopping a step short of 990 rather than at it is deliberate: that edge is soft,
+and the last legal wavelength is a poor place to park.
+
+For tdTomato on a Mai Tai that lands on 980 nm and about 33%, and dTomato gets
+the same offer for the same reason. Nothing else in the built-in list reaches
+the test, so the note appears exactly where it means something.
+
 ## References
 The page should close with a list of references, as some of these data came from people's papers. 
 Also, the reader needs to know where to go for further information. 

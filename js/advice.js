@@ -18,6 +18,22 @@
     tdtomato: { wl: 1040, note: 'the usual tdTomato wavelength where the laser reaches it' },
   };
 
+  /* Where the warning about having no anatomy left fires.
+   *
+   * Observed on the rig rather than modelled: there is still nice background in
+   * both the red and the green channel at 960 nm, so a note there telling you
+   * the other channels are dark is simply wrong, and it fired on ordinary
+   * choices - eYFP at 960, tdTomato at 950. The prose rounds it to "about
+   * 1,000 nm", which is honest about how sharp the edge really is.
+   *
+   * Not the same number as optics.js's CTX_FULL, which is where the recommender
+   * starts *preferring* shorter wavelengths. That one is 950 and stays there:
+   * it is tuned against the background yields in optics.js (green is already
+   * fading by 940), and moving it out to 990 pushes the tunable line up to 980
+   * in cases that were settled at 940-960 on purpose. This is a note about
+   * where you have ended up; that is a thumb on the scale for getting there. */
+  var NO_BACKGROUND_NM = 990;
+
   /* The notes under the headline wavelength, as [{kind, text}] where kind is
    * one of info / warn / danger / alt and decides only how the page styles the
    * line. Order is the order they are pushed, which is roughly most to least
@@ -84,9 +100,9 @@
         'at ' + best.wl + ' nm, so this is a power-limited choice.' });
     }
 
-    // declared up here because the >950 nm advice below needs it too; when it
-    // was declared further down that test silently read undefined and the
-    // "best option at or below 950 nm" suggestion never appeared
+    // declared up here because the NO_BACKGROUND_NM advice below needs it too;
+    // when it was declared further down that test silently read undefined and
+    // the "best option at or below" suggestion never appeared
     var anyTunable = (rec.lasers || [laser]).some(function (l) { return l.tunable !== false; });
 
     /* --- past the usual stopping point, for a peak -------------------------
@@ -110,18 +126,18 @@
       }
     }
 
-    /* --- the >950 nm problem ---------------------------------------------- */
-    if (best.wl > 950) {
+    /* --- the no-background problem ----------------------------------------- */
+    if (best.wl > NO_BACKGROUND_NM) {
       /* The scarcity of background autofluorescence up here is a property of the
        * sample and applies to every laser. Whether the laser is also running out
        * of power is a separate question, and only true of a Ti:Sapphire. */
-      var txt = 'Above ~950 nm there is very little background autofluorescence, so the ' +
+      var txt = 'Above about 1,000 nm there is very little background autofluorescence, so the ' +
         'other channels give you almost no anatomical context to register sections against.';
       if (laser.kind === 'Ti:Sapphire' && best.mw != null && best.mw < 100) {
         txt += ' Ti:Sapphire output is falling away fast here too.';
       }
       items.push({ kind: 'info', text: txt });
-      var lower = rec.allCandidates.filter(function (c) { return c.wl <= 950; })
+      var lower = rec.allCandidates.filter(function (c) { return c.wl <= NO_BACKGROUND_NM; })
         .sort(function (a, b) { return b.obj - a.obj; })[0];
       // skip if it is already going to be listed as an alternative below
       var listed = rec.candidates.some(function (c) { return lower && c.wl === lower.wl; });
@@ -130,10 +146,11 @@
         // necessarily worse than where they are standing
         items.push({ kind: 'info', text: lower.obj > best.obj * 1.02
           ? 'If that matters more than raw signal, ' + lower.wl + ' nm is the best choice at ' +
-            'or below 950 nm — and it scores better than ' + best.wl + ' nm anyway.'
+            'or below ' + NO_BACKGROUND_NM + ' nm — and it scores better than ' +
+            best.wl + ' nm anyway.'
           : 'If that matters more than raw signal, ' + lower.wl + ' nm is the best choice at or ' +
-            'below 950 nm, at ' + pct(lower.obj / best.obj) + ' of the signal you would get at ' +
-            best.wl + ' nm.' });
+            'below ' + NO_BACKGROUND_NM + ' nm, at ' + pct(lower.obj / best.obj) +
+            ' of the signal you would get at ' + best.wl + ' nm.' });
       }
     }
 
@@ -175,6 +192,40 @@
           'it. ' : '') + 'These spectra change slowly: ±10 nm is rarely the thing ' +
           'that matters.' });
         capped = true;
+
+        /* And name the far end of that trade, as something to click rather than
+         * a direction to wander in.
+         *
+         * The cap holds at 940 nm because one beam has to leave some anatomy
+         * behind, and that is the cautious reading: how much background a brain
+         * gives you varies from brain to brain, and the person at the scope can
+         * see theirs. So offer the reddest round wavelength that is still short
+         * of where the autofluorescence genuinely runs out - a step below
+         * NO_BACKGROUND_NM, because that edge is soft and the last legal pixel
+         * is a poor place to sit - and say what it buys. For tdTomato on a Mai
+         * Tai that is 980 nm and about a third more signal. */
+        var far = null;
+        for (var w = rec.cap + 10; w < NO_BACKGROUND_NM; w += 10) {
+          if (w < rec.range[0] || w > rec.range[1]) continue;
+          var at = rec.evalVec([w]);
+          var keeps = usable.every(function (s, i) {
+            return at.raw[i] >= (best.raw[i] || 0) * 0.95;
+          });
+          if (!keeps) continue;
+          if (!far || at.tot > far.at.tot) far = { wl: w, at: at };
+        }
+        var lifts = far ? usable.map(function (s, i) {
+          return { name: name(s), r: far.at.raw[i] / (best.raw[i] || 1) };
+        }).filter(function (g) { return g.r > 1.15; })
+          .sort(function (a, b) { return b.r - a.r; }) : [];
+        if (lifts.length) {
+          items.push({ kind: 'alt', wl: far.wl, text:
+            'If the background in your sections is good enough to spare — and that ' +
+            'varies from brain to brain — ' + far.wl + ' nm is the other end of this ' +
+            'trade: about ' + Math.round((lifts[0].r - 1) * 100) + '% more ' +
+            list(lifts.map(function (g) { return g.name; })) + ' signal than at ' +
+            rec.cap + ' nm, and still short of where the autofluorescence gives out.' });
+        }
       }
     }
 
