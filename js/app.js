@@ -737,7 +737,10 @@
       onZoom: function (c) { syncZoomBtn('exc', c); },
     });
     charts.em = new SV.Chart($('chart-em'), {
-      xMin: 380, xMax: 800, yMin: 0, yMax: 1,
+      // Plotted range only. The capture maths integrates over optics.EM_LO to
+      // EM_HI, which is wider on purpose: what a channel collects must not
+      // depend on where the axis happens to stop.
+      xMin: 390, xMax: 720, yMin: 0, yMax: 1,
       xLabel: 'Emission wavelength (nm)',
       yLabel: 'Relative intensity / transmission',
       spectralRail: true,
