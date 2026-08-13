@@ -731,6 +731,13 @@ def lookup_filter(by_name, name):
 
 
 def filt_record(sid, name, subtype, data):
+    # A microscope's own filters go in bundled-filters.json rather than the
+    # library, so the vendor measurement has to be substituted here too - the
+    # default rig and the picker have to agree about what a part transmits.
+    vend = vendor_curve(name, decimals=4)
+    if vend:
+        return {"id": sid, "name": name, "type": subtype, "source": vend["vendor"],
+                "curve": vend["curve"]}
     return {"id": sid, "name": name, "type": subtype, "source": "FPbase",
             "curve": pack(data, ONEP_LO, ONEP_HI, 4)}
 
@@ -808,9 +815,22 @@ def build_filter_library(index):
     ids = [e["id"] for e in entries]
     raw = fetch_spectra(ids)
 
+    vendor = build_vendor_shards({e["owner"]["name"]: e["id"] for e in entries})
+
     shards = {}
     idx = []
     for n, e in enumerate(entries):
+        name = e["owner"]["name"]
+        moved = vendor["moved"].get(name)
+        if moved:
+            # The vendor's own measurement replaces FPbase's copy of this part.
+            # The entry keeps its FPbase id and name - it is the same filter, and
+            # anything already pointing at it by either still resolves - but its
+            # curve is read from the vendor shard from here on.
+            idx.append({"id": e["id"], "n": name, "t": e["subtype"], "s": moved["shard"],
+                        "v": vendor_of(name), "c": centre_of(name, moved["curve"]),
+                        "src": moved["vendor"]})
+            continue
         data = raw.get(e["id"])
         if not data:
             continue
@@ -819,20 +839,128 @@ def build_filter_library(index):
             continue
         shard = n // SHARD_SIZE
         shards.setdefault(shard, {})[e["id"]] = curve
-        name = e["owner"]["name"]
         idx.append({
             "id": e["id"], "n": name, "t": e["subtype"], "s": shard_name(shard, len(entries)),
             "v": vendor_of(name), "c": centre_of(name, curve),
         })
 
+    # Every entry names its own shard, so the vendor libraries can be filed by
+    # name without disturbing the shards the FPbase curves were packed into. The
+    # picker lists the index in order, and alphabetical is the order it expects.
+    idx = sorted(idx + vendor["index"], key=lambda e: e["n"].lower())
+
     write(os.path.join(OUT, "filter-library-index.json"),
-          {"note": "Searchable index of the whole FPbase filter library. Each entry "
-                   "names the file in filter-library/ that holds its curve.",
+          {"note": "Searchable index of the whole FPbase filter library, plus the "
+                   "parts measured by their manufacturer in data/filter-library/"
+                   "filters-<vendor>.json. Each entry names the file in "
+                   "filter-library/ that holds its curve.",
            "shardSize": SHARD_SIZE, "filters": idx}, "SV_FILTER_INDEX")
     for shard, payload in shards.items():
         write(os.path.join(OUT, "filter-library", shard_name(shard, len(entries)) + ".json"),
               payload)
-    print(f"  -> {len(idx)} filters in {len(shards)} shards")
+    for shard, payload in vendor["curves"].items():
+        write(os.path.join(OUT, "filter-library", shard + ".json"), payload)
+    print(f"  -> {len(idx)} filters in "
+          f"{len(shards) + len(vendor['curves'])} shards")
+
+
+# ------------------------------------------------------------- vendor spectra
+#
+# FPbase stores filter curves over 350-900 nm, which stops just short of the
+# question a two-photon rig asks: does the emission filter still block at the
+# wavelength the laser is tuned to? Manufacturers publish the measured
+# transmission of a part over a far wider range, so where one of those files is
+# to hand it is used in preference to FPbase's copy. They are filed by
+# manufacturer rather than by position in the library, so renumbering the FPbase
+# shards cannot disturb them.
+VENDOR_DIR = os.path.join(HERE, "vendor-spectra")
+VENDOR_LO, VENDOR_HI = 300, 1200
+
+VENDOR_SPECTRA = [
+    # (file in vendor-spectra/, manufacturer, library name, subtype)
+    ("Semrock_FF01-460_60_Spectrum.txt", "Semrock", "Semrock FF01-460/60", "BP"),
+    ("Semrock_FF01-525_39_Spectrum.txt", "Semrock", "Semrock FF01-525/39", "BP"),
+    ("Semrock_FF01-607_70_Spectrum.txt", "Semrock", "Semrock FF01-607/70", "BP"),
+    ("Semrock_FF01-676_29_Spectrum.txt", "Semrock", "Semrock FF01-676/29", "BP"),
+    ("Semrock_FF03-525_50_Spectrum.txt", "Semrock", "Semrock FF03-525/50", "BP"),
+    ("ThorLabs_mf460-60_Transmission-Table.csv", "Thorlabs", "Thorlabs MF460-60", "BP"),
+]
+
+
+def vendor_shard(name):
+    return "filters-" + name.lower()
+
+
+def vendor_curve(name, decimals=3):
+    """The manufacturer's own curve for one library name, or None."""
+    for fname, maker, vname, _ in VENDOR_SPECTRA:
+        if vname == name:
+            curve = pack(read_vendor_spectrum(os.path.join(VENDOR_DIR, fname)),
+                         VENDOR_LO, VENDOR_HI, decimals)
+            return {"vendor": maker, "curve": curve} if curve else None
+    return None
+
+
+def build_vendor_shards(id_by_name, decimals=3):
+    """Pack every vendor spectrum, filed under filters-<manufacturer>.json.
+
+    `id_by_name` maps FPbase library names to ids. A part FPbase already knows
+    keeps that id and is reported in `moved`, for the caller to point at the
+    vendor shard instead of the positional one; a part FPbase does not have gets
+    an index entry of its own and an id that cannot collide with FPbase's
+    numbers.
+    """
+    curves, index, moved = {}, [], {}
+    for fname, maker, name, subtype in VENDOR_SPECTRA:
+        pts = read_vendor_spectrum(os.path.join(VENDOR_DIR, fname))
+        curve = pack(pts, VENDOR_LO, VENDOR_HI, decimals)
+        if not curve:
+            print(f"  ! no usable spectrum in {fname}")
+            continue
+        shard = vendor_shard(maker)
+        sid = id_by_name.get(name)
+        if sid:
+            moved[name] = {"shard": shard, "vendor": maker, "curve": curve}
+        else:
+            sid = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+            index.append({"id": sid, "n": name, "t": subtype, "s": shard,
+                          "v": vendor_of(name), "c": centre_of(name, curve),
+                          "src": maker})
+        curves.setdefault(shard, {})[sid] = curve
+    return {"curves": curves, "index": index, "moved": moved}
+
+
+def read_vendor_spectrum(path):
+    """One vendor spectrum file, resampled from its 0.2 nm grid onto whole nm.
+
+    Covers the two layouts to hand: Semrock's tab-separated wavelength and
+    transmission under four lines of preamble, and Thorlabs' two-column CSV of
+    wavelength and *percent* transmission. Both sample every 0.2 nm, so whole
+    nanometres are measurements rather than interpolations.
+    """
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        text = fh.read()
+    percent = "%" in text.split("\n", 1)[0]
+    sep = "," if path.lower().endswith(".csv") else "\t"
+
+    by_nm = {}
+    for line in text.splitlines():
+        parts = line.strip().split(sep)
+        if len(parts) < 2:
+            continue
+        try:
+            x, y = float(parts[0]), float(parts[1])
+        except ValueError:
+            continue  # preamble and column headings
+        if percent:
+            y /= 100.0
+        if abs(x - round(x)) < 1e-6:
+            by_nm[int(round(x))] = y
+
+    if by_nm and max(by_nm.values()) > 1.5:
+        raise SystemExit(f"{os.path.basename(path)}: transmission over 1.5 - "
+                         "percent data not recognised as such?")
+    return [[x, by_nm[x]] for x in sorted(by_nm)]
 
 
 def shard_name(shard, total):

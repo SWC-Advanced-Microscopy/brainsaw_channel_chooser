@@ -185,6 +185,7 @@ data/bundled-filters.json       curves for the filters the built-in microscopes 
 data/microscopes.json           built-in microscope configurations
 data/filter-library-index.json  searchable index of the whole FPbase filter library
 data/filter-library/*.json      the library's curves, fetched on demand
+data/filter-library/filters-<vendor>.json  curves measured by the manufacturer
 ```
 
 Edit `CURATED` in `build/fetch_data.py` to change the fluorophore list and which
@@ -203,6 +204,56 @@ microscope and its channels.
 | 2p spectra, "E" | estimated, not measured | absolute (GM) |
 | 1p excitation / emission | FPbase | normalised |
 | Filter transmission | FPbase filter library | fraction transmitted |
+| Filter transmission, measured parts | manufacturer's own spectrum, `build/vendor-spectra/` | fraction transmitted |
+
+### Filters measured by their manufacturer
+
+FPbase stores filter curves over 350–900 nm, which stops just short of the
+question a two-photon rig actually asks: does the emission filter still block at
+the wavelength the laser is tuned to? Semrock and Thorlabs both publish the
+measured transmission of a part out to 1200 nm, so where one of those files is to
+hand it is used in preference to FPbase's copy.
+
+The files live in `build/vendor-spectra/` and are listed in `VENDOR_SPECTRA` in
+`build/fetch_data.py` — a file name, the manufacturer, the name to file it under,
+and its subtype. Semrock ships tab-separated transmission as a fraction under
+four lines of preamble; Thorlabs ships a CSV of *percent* transmission. Both
+sample every 0.2 nm, and whole nanometres are kept, so the stored curve is
+measurements rather than interpolations.
+
+They are written to `data/filter-library/filters-semrock.json` and
+`filters-thorlabs.json` — one library per manufacturer, filed by name rather than
+by position, so renumbering the FPbase shards cannot disturb them. A part FPbase
+already knows keeps its FPbase id and name and simply reads its curve from the
+manufacturer's library instead, so nothing is duplicated in the picker and any
+saved link still resolves. Where a microscope in `configs/` uses one of these
+parts, `bundled-filters.json` gets the same curve, so the built-in rigs and the
+picker agree about what a filter transmits. The picker tags these curves with the
+manufacturer rather than FPbase.
+
+Every part checked agrees with FPbase's copy to within a rounding step across the
+whole 350–900 nm overlap. The value is what happens above it, where the blocking
+runs out:
+
+| | 900 | 1000 | 1064 | 1200 |
+|---|---|---|---|---|
+| FF01-460/60 | 0.10 | 0.86 | 0.73 | 0.75 |
+| FF01-525/39 | 0.65 | 0.86 | 0.25 | — |
+| FF03-525/50 | 0.00 | 0.00 | 0.01 | — |
+| FF01-607/70 | 0.00 | 0.00 | 0.03 | 0.10 |
+| FF01-676/29 | 0.00 | 0.00 | 0.30 | 0.92 |
+
+A dash is where the manufacturer's file ends. The blue and green bandpasses are
+all but transparent to the laser, which is what the separate blocking filter in
+front of the detectors is there for — and now the reason for it is in the data
+rather than only in the argument for it.
+
+Two of these turn out to be the same filter twice. AHF's F39-676 is byte-for-byte
+the Semrock FF01-676/29 file — AHF resell Semrock rather than measure anything —
+so only the Semrock original is carried. Thorlabs' MF460-60 matches Semrock's
+FF01-460/60 to 5e-11, the round trip through percent, so it is a rebadged
+FF01-460/60; it is kept under its own part number because that is what you order,
+and filed in the Thorlabs library.
 
 Chroma's spectra viewer was checked as a two-photon source and does not have
 one — its open API exposes 203 fluorochromes and 913 dyes, none with 2p data. The

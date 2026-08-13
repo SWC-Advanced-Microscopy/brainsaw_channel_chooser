@@ -567,7 +567,7 @@
 
       li.querySelector('[data-act="filter"]').addEventListener('click', function () {
         openPicker('Filter for ' + ch.name, function (rec, curve) {
-          extraFilters[rec.id] = { id: rec.id, name: rec.n, type: rec.t, source: 'FPbase', _curve: curve };
+          extraFilters[rec.id] = { id: rec.id, name: rec.n, type: rec.t, source: rec.src || 'FPbase', _curve: curve };
           ch.spectrum = rec.id;
           sortChannels();
           renderAll();
@@ -1798,7 +1798,7 @@
       return loadShard(rec.s).then(function (shard) {
         if (shard[rec.id]) {
           extraFilters[rec.id] = {
-            id: rec.id, name: rec.n, type: rec.t, source: 'FPbase',
+            id: rec.id, name: rec.n, type: rec.t, source: rec.src || 'FPbase',
             _curve: new SV.Curve(shard[rec.id]),
           };
         }
@@ -2042,7 +2042,7 @@
     // channels
     $('btn-add-channel').addEventListener('click', function () {
       openPicker('Filter for the new channel', function (rec, curve) {
-        extraFilters[rec.id] = { id: rec.id, name: rec.n, type: rec.t, source: 'FPbase', _curve: curve };
+        extraFilters[rec.id] = { id: rec.id, name: rec.n, type: rec.t, source: rec.src || 'FPbase', _curve: curve };
         state.channels.push({ name: 'Channel ' + (state.channels.length + 1), spectrum: rec.id, path: [] });
         renderAll();
       });
