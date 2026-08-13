@@ -4,7 +4,7 @@
   "id": "brainsaw-4chan",
   "order": 1,
   "name": "BrainSaw 4 chan",
-  "notes": "Four-channel BrainSaw. Filters as fitted to SWC BrainSaw 1.",
+  "notes": "Four-channel BrainSaw. Filters as fitted to SWC BrainSaw 1: green 30/01/2019, blue 07/02/2019, red 21/02/2019.",
   "blockerNm": 700,
   "lasers": ["maitai-ehp-ds"],
   "channels": [

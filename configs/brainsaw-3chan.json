@@ -4,7 +4,7 @@
   "id": "brainsaw-3chan",
   "order": 2,
   "name": "BrainSaw 3 chan",
-  "notes": "Three-channel BrainSaw. The red channel is a long-pass, so its upper edge is set by the 700 nm laser blocking filter rather than by the filter itself.",
+  "notes": "Three-channel BrainSaw. Green and blue fitted 20/11/2019, red 27/11/2019. The red channel is a long-pass, so its upper edge is set by the 700 nm laser blocking filter rather than by the filter itself.",
   "blockerNm": 700,
   "lasers": ["maitai-ehp-ds"],
   "channels": [
