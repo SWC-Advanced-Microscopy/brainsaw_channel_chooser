@@ -59,11 +59,14 @@
    * the label and leave the other channels enough autofluorescence to register
    * sections against - and past here the green channel's background is going.
    * A constraint rather than a cost, because a cost can always be outbid and
-   * here it should not be: tdTomato is 60% brighter at 1010 nm than at 940, and
-   * no penalty that is fair at 960 nm is heavy enough to refuse that. With a
+   * here it should not be: tdTomato is 60% brighter at 1010 nm than at 950, and
+   * no penalty that is fair at 960 nm is heavy enough to refuse that.
+   *
+   * 950 rather than 940: it is where CTX_FULL says background is still usable,
+   * and at 940 the cap held mixes containing eYFP at half its peak. With a
    * second, bluer beam on the sample the anatomy is covered and the red one is
    * free to go wherever it likes, so this never applies to more than one. */
-  var SOLO_CAP = 940;
+  var SOLO_CAP = 950;
   /* But soft against a peak, and hard against a slope. eYFP doubles between 940
    * and 960 nm and then falls away again: the cap was catching a maximum that
    * happens to sit just the wrong side of it, which is not what it is for. So a
@@ -74,12 +77,21 @@
    * and the cap holds. */
   var CAP_REACH = 40;      // the furthest past the cap a peak may be, in nm
   var CAP_MARGIN = 1.25;   // the least one fluorophore must gain to go there
-  var CAP_KEEP = 0.95;     // and the most any other may lose in the process
+  var CAP_KEEP = 0.85;     // and the least any other may keep in the process:
+                           // 5% was too strict - eGFP + eYFP + DiI was held at
+                           // 940 nm, eYFP at 51%, to spare eGFP an 11% loss
   var CAP_SETTLE = 0.97;   // stop at the near edge of a broad top, not its middle
   var CAP_OUTDONE = 1.1;   // how much better something redder may be, and it
                            // still counts as a top rather than a slope
   var CAP_EVIDENCE = 20;   // nm of measured curve required beyond a claimed top
   var DEFAULT_MIN_WL = 760;
+  /* Where a selection of tracers alone sits once every dye is bright enough.
+   * Past that point moving buys nothing, so the answer is the wavelength people
+   * already use: 920 nm, which keeps plenty of autofluorescence for registering
+   * sections. If 920 does not clear, the nearest wavelength that does. This used
+   * to be "go as long as still clears", which only gave 920 because the tracer
+   * data stopped there - an estimated DiI point at 980 nm sent DiI to 950. */
+  var TRACER_HOME = 920;
   var EM_LO = 380, EM_HI = 800;   // integration window for emission / detection
   /* How far apart two beams have to be before the second one is worth having.
    * See stack() - this is the whole of what stops both lasers being parked on
@@ -440,8 +452,7 @@
      * every channel when it is driven hard, so "brightest" is the wrong target -
      * "clears the bar" is. Their score therefore rises to 1 at the sufficiency
      * level and stays there, which frees the wavelength to be chosen on other
-     * grounds: 920 nm excites more evenly with depth and leaves enough green
-     * background to register sections against, so a saturated tie goes long.
+     * grounds: a saturated tie goes to TRACER_HOME, or as near it as clears.
      * s.sat is the sufficiency level in the curve's own units. */
     var sigma = function (s, wl) {
       if (s.sat) return Math.min(1, Math.max(0, s.twopCurve.at(wl)) / s.sat);
@@ -570,10 +581,9 @@
       var solo = laserGrid(lasers[0], minWl, 2);
       var ev = solo.map(function (wl) { return evalVec([wl]); });
       var score = ev.map(function (r) { return r.obj; });
-      var under = null, peak = null;
+      var under = null;
       solo.forEach(function (wl, i) {
-        if (wl <= cap) { if (!under || score[i] > under.obj) under = ev[i]; }
-        else if (wl <= cap + CAP_REACH && (!peak || score[i] > peak.obj)) peak = ev[i];
+        if (wl <= cap && (!under || score[i] > under.obj)) under = ev[i];
       });
       /* Who is this excursion for, and does anybody pay for it?
        *
@@ -582,19 +592,12 @@
        * 960 while dTomato, which is half of tdTomato and so dominates the
        * harmonic mean, barely moves - and the aggregate gain came out under the
        * bar even though nothing was being given up. So somebody has to gain
-       * properly and nobody may lose. One fluorophore paying for another's peak
-       * is a trade, and a trade is not what the cap should be let out for. */
-      var gainer = -1, gain = 1, worst = 1;
-      if (peak && under && peak.obj > under.obj) {
-        usable.forEach(function (s, i) {
-          if (!(under.raw[i] > 0)) return;
-          var r = peak.raw[i] / under.raw[i];
-          if (r > gain) { gain = r; gainer = i; }
-          if (r < worst) worst = r;
-        });
-      }
-
-      /* And is it actually a top? Judged on that fluorophore's own curve, not on
+       * properly and nobody may lose much. A modest trade is allowed (CAP_KEEP):
+       * eGFP giving up 15% so eYFP can come off its shoulder is worth it; one
+       * fluorophore paying heavily for another's peak is not what the cap should
+       * be let out for.
+       *
+       * And is it actually a top? Judged on that fluorophore's own curve, not on
        * the objective: the context penalty is already pulling the objective down
        * above 950 nm, so read there every curve looks like it is peaking, and
        * DsRed2 - which climbs all the way to the end of its data - came out as a
@@ -608,15 +611,33 @@
        *
        * The curve must also carry on past the peak: "nothing above this is
        * better" is trivially true where there is nothing above it at all. */
-      var worth = false;
-      if (gainer >= 0 && gain >= CAP_MARGIN && worst >= CAP_KEEP) {
-        var g = usable[gainer];
+      var isTop = function (k, p) {
+        var g = usable[k];
         var gc = (absolute && g.gmCurve) ? g.gmCurve : g.twopCurve;
-        worth = !!gc && gc.x1 >= peak.wl + CAP_EVIDENCE &&
+        return !!gc && gc.x1 >= p.wl + CAP_EVIDENCE &&
           solo.every(function (wl, i) {
-            return wl <= peak.wl || ev[i].raw[gainer] <= peak.raw[gainer] * CAP_OUTDONE;
+            return wl <= p.wl || ev[i].raw[k] <= p.raw[k] * CAP_OUTDONE;
           });
-      }
+      };
+      var qualifies = function (p) {
+        if (!under || p.obj <= under.obj) return false;
+        var ratios = usable.map(function (s, i) {
+          return under.raw[i] > 0 ? p.raw[i] / under.raw[i] : null;
+        });
+        if (ratios.some(function (r) { return r != null && r < CAP_KEEP; })) return false;
+        return ratios.some(function (r, i) { return r != null && r >= CAP_MARGIN && isTop(i, p); });
+      };
+      /* Every wavelength in reach is tried, not just the best-scoring one. The
+       * best score past the cap can belong to something still climbing - with
+       * the cap at 950, eYFP + tdTomato scored highest at 974 nm on tdTomato's
+       * slope, which failed the top test, and eYFP's genuine peak at 962 was
+       * never looked at. Of the wavelengths that pass, the best scoring wins. */
+      var peak = null;
+      solo.forEach(function (wl, i) {
+        if (wl > cap && wl <= cap + CAP_REACH && qualifies(ev[i]) &&
+            (!peak || score[i] > peak.obj)) peak = ev[i];
+      });
+      var worth = !!peak;
       if (worth) {
         cap = peak.wl;
         // a broad top is entered at its near edge: no need to run redder than
@@ -624,8 +645,20 @@
         solo.forEach(function (wl, i) {
           if (wl > capBase && wl < cap && score[i] >= peak.obj * CAP_SETTLE) cap = wl;
         });
+        // and to the nearest 10 nm, or the round-number snap cannot reach it:
+        // DiI + eYFP settled at 958, which ruled out 960 and dropped the answer
+        // back to 950 with eYFP at 75% instead of 96%. Nearest rather than up,
+        // or eYFP + dTomato, settling at 962, is pushed on to 970. Never back
+        // onto the cap itself, which would undo the excursion.
+        cap = Math.max(Math.round(cap / 10) * 10, capBase + 10);
       }
     }
+
+    /* Of two options that both clear, negative if a is nearer TRACER_HOME;
+     * an exact tie goes to the longer one. */
+    var nearerHome = function (a, b) {
+      return Math.abs(a.wl - TRACER_HOME) - Math.abs(b.wl - TRACER_HOME) || b.wl - a.wl;
+    };
 
     /* --- the raw optimum, over every combination on a 2 nm grid ---------- */
     var fine = combos(lasers.map(function (l) { return laserGrid(l, minWl, 2); }));
@@ -633,7 +666,7 @@
     fine.forEach(function (v) {
       var r = evalVec(v);
       // what the cap is costing, so the advice can say so rather than just
-      // quietly stopping at 940 nm
+      // quietly stopping at the cap
       if (!withinCap(v)) {
         if (!beyond || r.tot > beyond.tot) beyond = r;
         return;
@@ -641,8 +674,8 @@
       if (!best || r.obj > best.obj * 1.0001) { best = r; return; }
       if (r.obj <= best.obj * 0.9999) return;
       // Every dye already over the bar both ways: nothing is bought by going
-      // brighter, so take the longer wavelength.
-      if (r.clears && best.clears) { if (r.wl > best.wl) best = r; return; }
+      // brighter, so stay as near the usual wavelength as possible.
+      if (r.clears && best.clears) { if (nearerHome(r, best) < 0) best = r; return; }
       // ties on the worst case are broken by total signal: if eGFP is the
       // limiting fluorophore either way, take the option that also gives
       // tdTomato more rather than the first one found
@@ -691,8 +724,8 @@
     }
 
     cands.sort(function (a, b) {
-      // with every dye already over its floor, score says nothing: go long
-      if (a.clears && b.clears) return b.wl - a.wl || b.nice - a.nice;
+      // with every dye already over its floor, score says nothing: stay home
+      if (a.clears && b.clears) return nearerHome(a, b) || b.nice - a.nice;
       return b.rank - a.rank || b.tot - a.tot;
     });
 
@@ -764,5 +797,6 @@
     EM_HI: EM_HI,
     POWER_REF: POWER_REF,
     DEFAULT_MIN_WL: DEFAULT_MIN_WL,
+    TRACER_HOME: TRACER_HOME,
   };
 })(window.SV || (window.SV = {}));

@@ -854,11 +854,12 @@ window.SV_FLUOROPHORES = {
       "common": true,
       "twop": {
         "M": {
-          "curve": {"xy": [[760.0, 1.0], [780.0, 0.1932], [820.0, 0.0254], [850.0, 0.0256], [920.0, 0.2796]]},
+          "curve": {"xy": [[760.0, 1.0], [780.0, 0.1932], [820.0, 0.0254], [850.0, 0.0256], [920.0, 0.2796], [980.0, 0.4]]},
           "peakWl": 760,
           "absolute": false,
           "sparse": true,
-          "sufficient": 0.0291
+          "sufficient": 0.0291,
+          "estimatedWl": [980]
         }
       },
       "dye": true,

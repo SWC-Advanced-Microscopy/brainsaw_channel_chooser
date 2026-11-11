@@ -106,7 +106,7 @@
     var anyTunable = (rec.lasers || [laser]).some(function (l) { return l.tunable !== false; });
 
     /* --- past the usual stopping point, for a peak -------------------------
-     * A lone beam is normally held short of 940 nm so the other channels keep
+     * A lone beam is normally held at or below 950 nm so the other channels keep
      * some anatomy in them. It is let out only to reach a maximum sitting just
      * the far side of that, which is worth saying: the number looks like the
      * plateau-chasing the cap exists to prevent, and it is the opposite. */
@@ -196,7 +196,7 @@
         /* And name the far end of that trade, as something to click rather than
          * a direction to wander in.
          *
-         * The cap holds at 940 nm because one beam has to leave some anatomy
+         * The cap holds at 950 nm because one beam has to leave some anatomy
          * behind, and that is the cautious reading: how much background a brain
          * gives you varies from brain to brain, and the person at the scope can
          * see theirs. So offer the reddest round wavelength that is still short
@@ -291,9 +291,14 @@
           list(ample.map(name)) + ' ' + (ample.length > 1 ? 'are' : 'is') + ' judged on being ' +
           'bright enough rather than brightest: past a workable signal these dyes only bleed ' +
           'into neighbouring channels. ' + (ample.length > 1 ? 'They clear' : 'It clears') +
-          ' that at ' + best.wl + ' nm, which is the better place to sit anyway — excitation ' +
-          'is more even with depth and the green channel keeps enough background to register ' +
-          'sections against.' });
+          ' that at ' + best.wl + ' nm' +
+          // tracers alone: the wavelength was picked as the usual one, so say
+          // why; with a protein in the mix the protein picked it
+          (tracers.length === usable.length
+            ? ', so there is nothing to gain by moving. 920 nm is where these dyes are ' +
+              'usually imaged and keeps plenty of autofluorescence to register sections ' +
+              'against; anything redder gives up background for no benefit.'
+            : '.') });
       }
       if (thin.length) {
         items.push({ kind: 'warn', text:

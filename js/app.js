@@ -342,9 +342,14 @@
     var lo = Math.min.apply(null, sp.map(function (s) { return s.twopCurve.x0; }));
     var hi = Math.max.apply(null, sp.map(function (s) { return s.twopCurve.x1; }));
     var names = sp.map(function (s) { return SV.escapeHtml(s.fluor.name); }).join(', ');
+    var est = sp.filter(function (s) { return s.estimatedWl.length; }).map(function (s) {
+      return SV.escapeHtml(s.fluor.name) + ' at ' + s.estimatedWl.join(' and ') + ' nm';
+    });
     return ' ' + names + ': measured on BrainSaw at a few wavelengths between ' +
       Math.round(lo) + ' and ' + Math.round(hi) + ' nm, in arbitrary units. Dots are ' +
-      'the measurements, the lines between them are interpolation.';
+      'the measurements, the lines between them are interpolation.' +
+      (est.length ? ' Hollow dots are estimates, not measurements (' + est.join(', ') +
+        ').' : '');
   }
 
   /* Which 2p source to use for a selection entry, honouring the override. */
@@ -382,6 +387,7 @@
         twopPeak: t ? t.peakWl : null,
         peakGm: t ? t.peakGm : null,
         sparse: !!(t && t.sparse),
+        estimatedWl: (t && t.estimatedWl) || [],  // sparse points that are guesses
         sat: (t && t.sufficient) || null,   // "bright enough" level, tracers only
         color: fluorColor(f),
         weight: 1,
@@ -783,6 +789,7 @@
         color: s.color, curve: curve, kind: 'line', width: 2,
         fill: true, fillAlpha: 0.1,
         points: s.sparse ? curve.pts : null,
+        estimatedWl: s.estimatedWl,
         hidden: !!state.hidden['f-' + s.fluor.id],
         tipUnit: gm ? 'gm' : 'norm',
         peakVal: gm ? s.peakGm : 1,
@@ -1104,9 +1111,10 @@
       var allSat = rec && rec.usable && rec.usable.length &&
         rec.usable.every(function (s) { return s.sat; });
       if (allSat) {
-        subParts.push('Longest wavelength where ' +
-          (n === 1 ? 'the dye is' : n === 2 ? 'both dyes are' : 'all ' + n + ' dyes are') +
-          ' still bright enough.');
+        var dyes = n === 1 ? 'the dye is' : n === 2 ? 'both dyes are' : 'all ' + n + ' dyes are';
+        subParts.push(wl === SV.optics.TRACER_HOME
+          ? 'The usual wavelength, and ' + dyes + ' bright enough there.'
+          : 'Nearest the usual ' + SV.optics.TRACER_HOME + ' nm where ' + dyes + ' bright enough.');
       } else {
         // The objective picker in the rail already says whether it is balancing
         // the weakest fluorophore or the average, so repeating it here just adds

@@ -696,3 +696,54 @@ _[SWC Advanced Microscopy](https://swcmicroscopy.com/). Filter curves and some s
 * [Drobizhev et al. 2011](https://pmc.ncbi.nlm.nih.gov/articles/PMC4772972/)
 * [Mütze et al. 2012](https://pmc.ncbi.nlm.nih.gov/articles/PMC3283774/)
 * [Zipfel lab 2-photon spectra](http://www.drbio.cornell.edu/TwoPhotonXsec.html)
+
+## eGFP + eYFP + DiI, and the lone-beam cap moves to 950 nm
+
+> With YFP, GFP, and DiI it recommends 920 nm. This is because we have no data
+> for DiI beyond 920 nm. I know DiI is brighter at longer wavelengths. Just add a
+> DiI value at 980 nm that is at 40% brightness. If we don't image at around
+> 950 nm the YFP will suck.
+
+> We can allow a loss of 15%, yes. 15% is not really all that much, 5% is too
+> stringent. We can also raise the cap to 950 nm. Do both
+
+### What that became
+
+DiI gained an **estimated** point at 980 nm, 40% of its own (760 nm) peak. It is
+flagged as an estimate in the data (`estimatedWl`), drawn as a hollow dot, and
+named in the note under the chart. With it alone the answer moved 920 → 940 nm,
+held there by the lone-beam cap; eGFP's 11% loss tripped the 5% rule that guards
+crossing it.
+
+So `SOLO_CAP` went 940 → 950 (where `CTX_FULL` already put the edge of usable
+background) and `CAP_KEEP` 0.95 → 0.85. Two latent faults surfaced on the way and
+were fixed:
+
+- The excursion past the cap only examined the single best-scoring wavelength in
+  reach. With the cap at 950 that was 974 nm for eYFP + tdTomato, on tdTomato's
+  slope, which is not a top - so eYFP's real peak at 962 was never considered
+  and the answer fell from 960 to 950. Every wavelength in reach is now tested.
+- Having crossed, the cap settled at the near edge of the top (958 nm for DiI +
+  eYFP), which ruled out 960 for the round-number snap and dropped the answer to
+  950. It is now rounded to the nearest 10 nm, never back onto the cap.
+
+Results on a Mai Tai: eGFP + eYFP + DiI → **950 nm** (eGFP 80%, eYFP 75%).
+tdTomato, dTomato and DsRed2 940 → 950. DiI + eYFP 920 → 960; DiI +
+tdTomato 760 → 950. eYFP, citrine, eGFP, eGFP + tdTomato, the blues, the Alexas,
+DiO, DiD and all three tracers together are unchanged.
+
+## Tracers alone stay at 920 nm
+
+> for DiI alone we have been doing 920 nm because there is more autofluorescence
+> and the DiI is plenty bright I don't know how we would codify that, though.
+> 950 nm is a big change to what people are typically doing
+
+### What that became
+
+The tracer tie-break was "longest wavelength that still clears the floor". It
+only ever gave 920 because the data stopped there; the 980 nm DiI point sent DiI
+alone to 950. It is now "nearest 920 nm that clears" (`TRACER_HOME` in
+`js/optics.js`): once every dye is bright enough, moving buys nothing, so stay
+where people already image and the background is good. The headline and advice
+text say so. It only applies when everything selected is a tracer. Every tracer
+alone and every mix of them gives 920; mixes with proteins are unchanged.

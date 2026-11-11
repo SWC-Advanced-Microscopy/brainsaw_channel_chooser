@@ -65,6 +65,7 @@
  *   fillAlpha  opacity of that fill
  *   gradient   fill with the colours of the light itself (emission curves)
  *   points     [[x, y], ...] to mark with dots, for sparse measured data
+ *   estimatedWl  x values among `points` that are estimates: drawn hollow
  *   peakLabel  text to write at the curve's maximum
  *   hidden     skip it entirely; dimmed: draw it at 28% and skip its label
  *   noTip      leave it out of the hover readout
@@ -404,12 +405,21 @@
         ctx.save();
         ctx.globalAlpha = dim;
         ctx.fillStyle = s.color;
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 1.5;
+        var guessed = s.estimatedWl || [];
         for (var p = 0; p < s.points.length; p++) {
           var px = this.sx(s.points[p][0]), py = this.sy(s.points[p][1]);
           if (px < r.x || px > r.x + r.w) continue;
           ctx.beginPath();
-          ctx.arc(px, py, 3.5, 0, Math.PI * 2);
-          ctx.fill();
+          if (guessed.indexOf(s.points[p][0]) >= 0) {
+            // an estimate, not a measurement: hollow, so it does not read as data
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.stroke();
+          } else {
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
         ctx.restore();
       }

@@ -283,8 +283,14 @@ sections — the shape of one dye's curve is meaningful, the height against anot
 dye's is not, and they are never mixed into a GM comparison. The measurements are
 stored as the five points and interpolated linearly between them; the chart draws
 a dot at each one so the straight runs are not mistaken for data. Outside
-760–920 nm the curve reads zero, so the recommender will not send you to a
+the points given the curve reads zero, so the recommender will not send you to a
 wavelength these dyes were never tested at.
+
+DiI has one extra point, at 980 nm, and it is an **estimate, not a
+measurement**: 40% of DiI's own peak. DiI is known to be brighter out there than
+at 920 nm, and without it the curve stopped dead at 920 — which pinned any mix
+containing DiI to 920 nm, where eYFP is barely excited. eGFP + eYFP + DiI now
+lands on 950 nm rather than 920.
 
 All three are bright enough that the PMT gain had to be turned down to avoid
 saturating, which is why the raw counts run into the tens of thousands.
@@ -295,10 +301,15 @@ not: past a workable signal, more excitation buys nothing and DiI driven hard
 bleeds into every channel. So a tracer's score climbs to 1 at 300 counts — the
 line below which the measurements call a dye dim — and stays flat above it. That
 turns the answer into a plateau rather than a peak, and the tie is broken by
-taking the **longest** wavelength that still clears the floor: excitation is more
-even with depth, and the green channel keeps enough background to register
-sections against. Each tracer alone, and all three together, land on 920 nm,
-which is where they are imaged in practice.
+staying at **920 nm** — where these dyes are imaged in practice and there is
+plenty of autofluorescence to register sections against — or as near it as
+still clears the floor. Moving redder would give up background for nothing.
+Each tracer alone, and any mix of them, lands on 920 nm. This applies only when
+everything selected is a tracer: with a protein in the mix, the protein decides.
+
+(It used to be "the longest wavelength that still clears", which gave 920 only
+because the tracer data stopped there. Once DiI had a 980 nm point, DiI alone
+went to 950.)
 
 The hero bars still show each dye as a share of its own peak, with a *bright
 enough* / *may be dim* flag beside it — DiD reads 3% at 920 nm and is perfectly
@@ -471,30 +482,33 @@ from 55 to 77 GM — both comfortable numbers — and paying for it with tdTomat
 **920 and 1040 nm**. A lone beam cannot exceed its own peak, so none of this
 changes anything on a single-laser rig.
 
-**A lone beam is never sent past 940 nm.** One beam has to do both jobs — excite
-the label and leave the other channels enough autofluorescence to register sections
-against — and past ~940 nm the green channel's background is going. This is a
-constraint, not a cost, because a cost can always be outbid and here it should not
-be: tdTomato is 60% brighter at 1010 nm than at 940, and no penalty gentle enough
-to be fair at 960 nm will refuse that. The advice says what the cap is costing
+**A lone beam is not normally sent past 950 nm.** One beam has to do both jobs —
+excite the label and leave the other channels enough autofluorescence to register
+sections against — and past ~950 nm the green channel's background is going. This
+is a constraint, not a cost, because a cost can always be outbid and here it should
+not be: tdTomato is 1.9× brighter at 1010 nm than at 950, and no penalty gentle
+enough to be fair at 960 nm will refuse that. (The cap was 940 nm until eGFP +
+eYFP + DiI showed it holding eYFP at half its peak; 950 is also where the context
+penalty starts, so the two now agree.) The advice says what the cap is costing
 ("tdTomato is 2.1× at 1010 nm — and you can go there") so the trade is visible
 rather than silently made. With a second, bluer beam on the sample the anatomy is
 covered and the red one goes wherever it likes, so this never applies to more than
-one beam, nor to a fixed line, nor to a laser that cannot tune below 940 nm.
+one beam, nor to a fixed line, nor to a laser that cannot tune below 950 nm.
 
-**The cap is soft against a peak and hard against a slope.** eYFP doubles between
-940 and 960 nm and then falls away again, so a flat boundary was cutting across a
+**The cap is soft against a peak and hard against a slope.** eYFP climbs from 75%
+to 96% of its peak between 950 and 960 nm and then falls away again, so a flat boundary was cutting across a
 maximum that merely happens to sit the wrong side of it. A lone beam may therefore
 cross, to a point within 40 nm of the cap, if three things hold:
 
 - **Somebody gains properly** — one fluorophore is at least 25% brighter there
   than at the best wavelength below the cap.
-- **Nobody pays for it** — no other fluorophore is more than 5% worse off. One
-  fluorophore buying another's peak is a trade, and the cap should not be let out
-  for a trade. This is asked of each fluorophore separately, not of the combined
-  score: pair eYFP with dTomato and the harmonic mean, dominated by the dimmer
-  dTomato, dilutes eYFP's doubling to +16% overall even though dTomato itself is
-  flat across the step and gives up nothing.
+- **Nobody pays much for it** — no other fluorophore is more than 15% worse off. A
+  modest trade is fine (5% was tried first and was too strict); one fluorophore
+  paying heavily for another's peak is not what the cap should be let out for.
+  This is asked of each fluorophore separately, not of the combined score: pair
+  eYFP with dTomato and the harmonic mean, dominated by the dimmer dTomato,
+  dilutes eYFP's gain even though dTomato itself is flat across the step and
+  gives up nothing.
 - **It is genuinely a top** — read off the gaining fluorophore's own cross-section
   curve, which must extend at least 20 nm past the peak and must not beat it by
   more than 10% anywhere further out.
@@ -503,11 +517,17 @@ That last test has to be read on the raw curve rather than on the score, because
 the context penalty is already pulling the score down above 950 nm: read there,
 every curve looks like it is peaking, and DsRed2 — whose data stops at 990 nm
 while it is still climbing hard — came out as a maximum at 970. Having crossed,
-the beam stops at the near edge of the top rather than its middle.
+the beam stops at the near edge of the top rather than its middle, rounded to
+the nearest 10 nm so the round-number snap can land there.
+
+Every wavelength within reach is tested, not just the best-scoring one. The best
+score past the cap can belong to something still climbing: eYFP + tdTomato scores
+highest at 974 nm on tdTomato's slope, which is not a top, while eYFP's genuine
+peak at 962 nm passes.
 
 tdTomato and mCherry fail immediately: still climbing at 1040 nm, no top to cross
-to, 940 holds. In practice this moves eYFP and citrine (alone or paired with a
-tomato) from 940 to 960 nm and nothing else, and the advice says why the number is
+to, 950 holds. In practice this moves eYFP (alone, with a tomato, or with DiI)
+from 950 to 960 nm, and citrine likewise, and the advice says why the number is
 redder than usual.
 
 **Whether you need the second line is your call, not the tool's.** How much signal

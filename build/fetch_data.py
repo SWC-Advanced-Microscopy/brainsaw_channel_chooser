@@ -250,15 +250,28 @@ ONE_PHOTON_ONLY = [
 # Five wavelengths, and the shapes are not smooth (DiI drops by a factor of forty
 # between 760 and 820 nm, then climbs again), so the curve is stored as the
 # measured points and linearly interpolated between them. Nothing is invented
-# outside 760-920 nm: the sampler returns zero there, so the recommender will not
-# propose a wavelength these dyes were never tested at.
-MEASURED_2P = {
-    #        760      780      820     850     920
-    "dii": [10302.0,  1990.0,   262.0,  264.0, 2880.0],
-    "did": [25645.0, 28828.0, 24535.0, 5883.0,  782.0],
-    "dio": [   59.0,   143.0,   246.0,  715.0, 4032.0],
-}
+# outside the points given: the sampler returns zero there, so the recommender
+# will not propose a wavelength these dyes were never tested at.
+#
+# DiI's 980 nm point is the one exception, and it is an estimate, not a
+# measurement. DiI is known to be brighter out there than at 920 nm, and without
+# a point the curve stopped dead at 920 - which pinned any mix containing DiI to
+# 920 nm, where YFP is poorly excited. 40% of DiI's own peak (the 760 nm value) is
+# the working figure until it is measured.
 MEASURED_2P_WL = [760, 780, 820, 850, 920]
+MEASURED_2P = {
+    #                  760      780      820     850     920
+    "dii": list(zip(MEASURED_2P_WL + [980],
+                    [10302.0,  1990.0,   262.0,  264.0, 2880.0]
+                    + [round(0.40 * 10302.0)])),       # 980 nm: estimate
+    "did": list(zip(MEASURED_2P_WL,
+                    [25645.0, 28828.0, 24535.0, 5883.0,  782.0])),
+    "dio": list(zip(MEASURED_2P_WL,
+                    [   59.0,   143.0,   246.0,  715.0, 4032.0])),
+}
+# Points in MEASURED_2P that are estimates rather than measurements. The page
+# draws them hollow and says so, so they are never mistaken for data.
+ESTIMATED_2P_WL = {"dii": [980]}
 
 # The line below which one of these dyes counts as dim. Below about 300 counts
 # the signal is low and below about 1000 it is moderate, so 300 is where a dye
@@ -269,11 +282,10 @@ MEASURED_2P_WL = [760, 780, 820, 850, 920]
 # brightest" but "where is it not dim", because past a workable signal more
 # excitation buys nothing - DiI driven hard bleeds into every channel. Once a
 # wavelength clears the floor it is as good as any other, so the choice is made
-# on other grounds and the longest clearing wavelength wins: excitation is more
-# even with depth and the green channel keeps enough background to register
-# sections against. For a decently coated electrode that lands on 920 nm, which
-# is where these dyes are imaged in practice, even though DiI is nearly four
-# times brighter at 760 nm.
+# on other grounds: stay at 920 nm, where these dyes are imaged in practice and
+# there is plenty of autofluorescence to register sections against, or as near
+# it as clears (TRACER_HOME in js/optics.js). That holds even though DiI is
+# nearly four times brighter at 760 nm.
 SUFFICIENT_COUNTS = 300.0
 
 # dTomato relative to tdTomato. The tandem dimer is two copies of the same
@@ -601,12 +613,14 @@ def build():
                "common": common, "twop": {},
                "dye": kind == "dye"}
         if slug in MEASURED_2P:
-            counts = MEASURED_2P[slug]
-            add_2p(rec, "M", list(zip(MEASURED_2P_WL, counts)), absolute=False)
+            points = MEASURED_2P[slug]
+            add_2p(rec, "M", points, absolute=False)
             # The curve is stored normalised to its own peak, so express the
             # "bright enough" level in the same units.
             rec["twop"]["M"]["sufficient"] = round(
-                SUFFICIENT_COUNTS / max(counts), 4)
+                SUFFICIENT_COUNTS / max(c for _, c in points), 4)
+            if slug in ESTIMATED_2P_WL:
+                rec["twop"]["M"]["estimatedWl"] = ESTIMATED_2P_WL[slug]
         else:
             rec["noTwoP"] = True
         if kind == "protein":
